@@ -1,6 +1,10 @@
-import { Module } from '@nestjs/common';
+import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { validateEnv } from './config/env.schema';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -14,5 +18,13 @@ import { PrismaModule } from './prisma/prisma.module';
     }),
     PrismaModule,
   ],
+  providers: [
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}

@@ -18,17 +18,18 @@
     "format": "prettier --write \"{src,test,prisma}/**/*.ts\"",
     "format:check": "prettier --check \"{src,test,prisma}/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "jest --runInBand",
-    "test:unit": "jest --selectProjects unit",
-    "test:e2e": "jest --selectProjects e2e --runInBand",
-    "test:cov": "jest --runInBand --coverage",
+    "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ./node_modules/jest/bin/jest.js --runInBand",
+    "test:unit": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ./node_modules/jest/bin/jest.js --selectProjects unit",
+    "test:e2e": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ./node_modules/jest/bin/jest.js --selectProjects e2e --runInBand",
+    "test:cov": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ./node_modules/jest/bin/jest.js --runInBand --coverage",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "db:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "docs:openapi": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
-    "docs:check": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts --check"
+    "docs:check": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts --check",
+    "test:watch": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ./node_modules/jest/bin/jest.js --watch --selectProjects unit"
   },
   "dependencies": {
     "@nestjs/common": "^12.3.2",
