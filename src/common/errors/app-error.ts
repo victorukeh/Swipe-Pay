@@ -221,6 +221,35 @@ export class AppError extends Error {
     });
   }
 
+  /**
+   * Rebuilds an error from an idempotency record.
+   *
+   * A deterministic failure is replayed by re-raising it, not by returning the
+   * stored envelope as a response body: that way the reply goes through the
+   * normal exception filter and carries the *current* request's correlation id,
+   * while the code, message and details stay byte-identical to the first answer.
+   */
+  static fromStoredFailure(stored: { status: number; body: unknown }): AppError {
+    const envelope = stored.body as
+      { error?: { code?: unknown; message?: unknown; details?: unknown } } | null | undefined;
+    const error = envelope?.error;
+
+    return new AppError({
+      code: (typeof error?.code === 'string'
+        ? error.code
+        : ErrorCode.INTERNAL_ERROR) as ErrorCodeValue,
+      status: stored.status,
+      message: typeof error?.message === 'string' ? error.message : 'Request previously failed',
+      details:
+        error?.details !== null && typeof error?.details === 'object'
+          ? (error.details as Record<string, unknown>)
+          : {},
+      // Stored failures are only ever the deterministic ones, by construction:
+      // a transient failure releases its key instead of recording a response.
+      retryable: false,
+    });
+  }
+
   static internal(cause?: unknown): AppError {
     return new AppError({
       code: ErrorCode.INTERNAL_ERROR,
