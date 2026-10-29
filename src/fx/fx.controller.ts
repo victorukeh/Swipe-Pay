@@ -6,7 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { CURRENCY_CODES } from '../money/currencies';
+import { CurrencyRegistry } from '../money/currency-registry.service';
 import { MoneyUtil } from '../money/money.util';
 import { CurrencyResponse, RatesResponse } from './dto/rates.response';
 import { FxService } from './fx.service';
@@ -14,7 +14,10 @@ import { FxService } from './fx.service';
 @ApiTags('rates')
 @Controller()
 export class FxController {
-  constructor(private readonly fx: FxService) {}
+  constructor(
+    private readonly fx: FxService,
+    private readonly currencies: CurrencyRegistry,
+  ) {}
 
   @Get('rates')
   @ApiOperation({
@@ -46,7 +49,7 @@ export class FxController {
       'an amount like "1500.50" is rejected rather than rounded.',
   })
   @ApiOkResponse({ type: [CurrencyResponse] })
-  currencies(): CurrencyResponse[] {
-    return CURRENCY_CODES.map((code) => MoneyUtil.describe(code));
+  listCurrencies(): CurrencyResponse[] {
+    return this.currencies.all().map((meta) => MoneyUtil.describeCurrency(meta));
   }
 }

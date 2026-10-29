@@ -1,7 +1,4 @@
 -- CreateEnum
-CREATE TYPE "Currency" AS ENUM ('cNGN', 'cGHS', 'cXAF', 'USDx', 'EURx');
-
--- CreateEnum
 CREATE TYPE "TransactionType" AS ENUM ('DEPOSIT', 'SWAP', 'TRANSFER');
 
 -- CreateEnum
@@ -15,6 +12,21 @@ CREATE TYPE "AttemptOutcome" AS ENUM ('SUCCEEDED', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "IdempotencyState" AS ENUM ('IN_FLIGHT', 'COMPLETED', 'FAILED');
+
+-- CreateTable
+CREATE TABLE "currencies" (
+    "code" TEXT NOT NULL,
+    "peg" TEXT NOT NULL,
+    "decimals" INTEGER NOT NULL,
+    "name" TEXT NOT NULL,
+    "minor_unit" TEXT NOT NULL,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "sort_order" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "currencies_pkey" PRIMARY KEY ("code")
+);
 
 -- CreateTable
 CREATE TABLE "wallets" (
@@ -43,7 +55,7 @@ CREATE TABLE "credentials" (
 -- CreateTable
 CREATE TABLE "balances" (
     "wallet_id" UUID NOT NULL,
-    "currency" "Currency" NOT NULL,
+    "currency" TEXT NOT NULL,
     "amount" BIGINT NOT NULL DEFAULT 0,
     "allow_negative" BOOLEAN NOT NULL DEFAULT false,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -57,9 +69,9 @@ CREATE TABLE "transactions" (
     "type" "TransactionType" NOT NULL,
     "source_wallet_id" UUID NOT NULL,
     "dest_wallet_id" UUID,
-    "source_currency" "Currency" NOT NULL,
+    "source_currency" TEXT NOT NULL,
     "source_amount" BIGINT NOT NULL,
-    "dest_currency" "Currency" NOT NULL,
+    "dest_currency" TEXT NOT NULL,
     "dest_amount" BIGINT NOT NULL,
     "rate_scaled" BIGINT NOT NULL,
     "rate_source" "RateSource" NOT NULL,
@@ -75,7 +87,7 @@ CREATE TABLE "ledger_entries" (
     "id" UUID NOT NULL,
     "transaction_id" UUID NOT NULL,
     "wallet_id" UUID NOT NULL,
-    "currency" "Currency" NOT NULL,
+    "currency" TEXT NOT NULL,
     "direction" "LedgerDirection" NOT NULL,
     "amount" BIGINT NOT NULL,
     "balance_after" BIGINT NOT NULL,
@@ -130,6 +142,9 @@ CREATE TABLE "fx_rate_snapshots" (
 );
 
 -- CreateIndex
+CREATE INDEX "currencies_is_active_sort_order_idx" ON "currencies"("is_active", "sort_order");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "wallets_email_key" ON "wallets"("email");
 
 -- CreateIndex
@@ -137,6 +152,9 @@ CREATE UNIQUE INDEX "wallets_phone_key" ON "wallets"("phone");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "wallets_system_key_key" ON "wallets"("system_key");
+
+-- CreateIndex
+CREATE INDEX "balances_currency_idx" ON "balances"("currency");
 
 -- CreateIndex
 CREATE INDEX "transactions_source_wallet_id_created_at_idx" ON "transactions"("source_wallet_id", "created_at" DESC);
@@ -169,16 +187,28 @@ ALTER TABLE "credentials" ADD CONSTRAINT "credentials_wallet_id_fkey" FOREIGN KE
 ALTER TABLE "balances" ADD CONSTRAINT "balances_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "balances" ADD CONSTRAINT "balances_currency_fkey" FOREIGN KEY ("currency") REFERENCES "currencies"("code") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_wallet_id_fkey" FOREIGN KEY ("source_wallet_id") REFERENCES "wallets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_dest_wallet_id_fkey" FOREIGN KEY ("dest_wallet_id") REFERENCES "wallets"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_currency_fkey" FOREIGN KEY ("source_currency") REFERENCES "currencies"("code") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_dest_currency_fkey" FOREIGN KEY ("dest_currency") REFERENCES "currencies"("code") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "transactions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_currency_fkey" FOREIGN KEY ("currency") REFERENCES "currencies"("code") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "transaction_attempts" ADD CONSTRAINT "transaction_attempts_wallet_id_fkey" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -207,13 +237,9 @@ ALTER TABLE "balances"
   CHECK ("allow_negative" = true OR "amount" >= 0);
 
 -- Ledger entries carry their sign in `direction`, so the magnitude is positive.
--- Zero-value entries are not written at all (a conversion with no rounding
--- residual simply omits the rounding entry).
+-- Zero-value entries are not written at all.
 ALTER TABLE "ledger_entries"
   ADD CONSTRAINT "ledger_entries_amount_positive" CHECK ("amount" > 0);
-
-ALTER TABLE "ledger_entries"
-  ADD CONSTRAINT "ledger_entries_balance_after_non_negative" CHECK ("balance_after" >= 0);
 
 -- No zero-value or negative movements, and no zero/negative FX rate.
 ALTER TABLE "transactions"
@@ -244,9 +270,9 @@ ALTER TABLE "wallets"
     "is_system" = true OR "email" IS NOT NULL OR "phone" IS NOT NULL
   );
 
--- Contacts are stored normalised, so the plain unique indexes above are
--- sufficient: the database refuses to hold a value that isn't already canonical,
--- which means "Ada@Example.COM" can never slip past "ada@example.com".
+-- Contacts are stored normalised, so the plain unique indexes are sufficient:
+-- the database refuses to hold a value that isn't already canonical, which means
+-- "Ada@Example.COM" can never slip past "ada@example.com".
 ALTER TABLE "wallets"
   ADD CONSTRAINT "wallets_email_normalised" CHECK ("email" IS NULL OR "email" = lower("email"));
 
@@ -268,3 +294,79 @@ ALTER TABLE "transaction_attempts"
     ("outcome" = 'SUCCEEDED' AND "transaction_id" IS NOT NULL AND "error_code" IS NULL)
     OR ("outcome" = 'FAILED' AND "error_code" IS NOT NULL)
   );
+
+-- ---------------------------------------------------------------------------
+-- Currency metadata guards.
+--
+-- The currencies table is the sole authority for which stablecoins exist and
+-- what precision each admits, so a new currency is an INSERT rather than a
+-- release. That convenience makes two columns dangerous, and both are guarded
+-- here rather than relying on operator discipline.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "currencies"
+  ADD CONSTRAINT "currencies_decimals_range" CHECK ("decimals" >= 0 AND "decimals" <= 18);
+
+ALTER TABLE "currencies"
+  ADD CONSTRAINT "currencies_code_shape" CHECK ("code" ~ '^[A-Za-z][A-Za-z0-9]{1,15}$');
+
+ALTER TABLE "currencies"
+  ADD CONSTRAINT "currencies_peg_shape" CHECK ("peg" ~ '^[A-Z]{3}$');
+
+-- `sort_order` is a fractional index: a new currency is slotted between two
+-- existing ones with (left + right) / 2, so nothing is ever renumbered. It is
+-- NUMERIC rather than DOUBLE PRECISION because that midpoint has to stay exact;
+-- with binary floating point, successive midpoints would eventually collide and
+-- the ordering would become non-deterministic.
+ALTER TABLE "currencies"
+  ADD CONSTRAINT "currencies_sort_order_non_negative" CHECK ("sort_order" >= 0);
+
+-- `decimals` is the column that can destroy the ledger.
+--
+-- Every amount is stored as an integer count of minor units, so the number of
+-- decimal places is what gives a stored integer its meaning. Changing cNGN from
+-- 2 to 3 would silently reinterpret 123456 from 1234.56 to 123.456 — across
+-- every balance, every ledger entry and every historical transaction, with no
+-- migration and nothing in the audit trail.
+--
+-- So: freely editable while a currency is unused, immutable the moment any money
+-- references it. Withdrawing a currency is done with is_active, not by editing
+-- its precision.
+CREATE OR REPLACE FUNCTION "currencies_guard_decimals"() RETURNS trigger AS $$
+BEGIN
+  IF NEW."decimals" IS DISTINCT FROM OLD."decimals" THEN
+    IF EXISTS (SELECT 1 FROM "balances" WHERE "currency" = OLD."code" AND "amount" <> 0)
+       OR EXISTS (SELECT 1 FROM "ledger_entries" WHERE "currency" = OLD."code")
+       OR EXISTS (SELECT 1 FROM "transactions"
+                  WHERE "source_currency" = OLD."code" OR "dest_currency" = OLD."code")
+    THEN
+      RAISE EXCEPTION
+        'cannot change decimals for currency % : % balance/ledger rows already interpret amounts at % decimals',
+        OLD."code", 'existing', OLD."decimals"
+        USING ERRCODE = 'integrity_constraint_violation',
+              HINT = 'Deactivate the currency with is_active = false and introduce a new code instead.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "currencies_guard_decimals"
+  BEFORE UPDATE ON "currencies"
+  FOR EACH ROW EXECUTE FUNCTION "currencies_guard_decimals"();
+
+-- Changing a code would orphan every FK that points at it; renaming is not a
+-- supported operation.
+CREATE OR REPLACE FUNCTION "currencies_guard_code"() RETURNS trigger AS $$
+BEGIN
+  IF NEW."code" IS DISTINCT FROM OLD."code" THEN
+    RAISE EXCEPTION 'currency codes are immutable (attempted % -> %)', OLD."code", NEW."code"
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "currencies_guard_code"
+  BEFORE UPDATE ON "currencies"
+  FOR EACH ROW EXECUTE FUNCTION "currencies_guard_code"();

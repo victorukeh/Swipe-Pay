@@ -31,7 +31,7 @@ export class StaticFxProvider implements FxRateProvider {
   fetch(): Promise<RateTable | null> {
     return Promise.resolve({
       perUsd: Object.fromEntries(
-        Object.entries(STATIC_PER_USD).map(([peg, rate]) => [peg, MoneyUtil.parseRate(rate)]),
+        Object.entries(STATIC_PER_USD).map(([peg, rate]) => [peg, MoneyUtil.rateFromString(rate)]),
       ),
       asOf: STATIC_RATES_AS_OF,
       source: 'fallback',

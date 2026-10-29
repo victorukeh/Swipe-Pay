@@ -1,13 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-import { CURRENCY_CODES, type CurrencyCode } from '../../money/currencies';
+import type { CurrencyCode } from '../../money/currency.types';
 import type { RateSourceName } from '../fx.types';
 
 export class RateEntryResponse {
-  @ApiProperty({ enum: CURRENCY_CODES, example: 'cNGN' })
+  @ApiProperty({
+    description: 'Currency code. The valid set is whatever GET /currencies returns.',
+    example: 'cNGN',
+  })
   from!: CurrencyCode;
 
-  @ApiProperty({ enum: CURRENCY_CODES, example: 'USDx' })
+  @ApiProperty({ example: 'USDx' })
   to!: CurrencyCode;
 
   @ApiProperty({
@@ -48,7 +51,7 @@ export class RatesResponse {
 }
 
 export class CurrencyResponse {
-  @ApiProperty({ enum: CURRENCY_CODES, example: 'cXAF' })
+  @ApiProperty({ example: 'cXAF' })
   code!: CurrencyCode;
 
   @ApiProperty({ example: 'Central African CFA franc stablecoin' })

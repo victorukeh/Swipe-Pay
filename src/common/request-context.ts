@@ -1,7 +1,5 @@
 import type { Request } from 'express';
 
-import type { CurrencyCode } from '../money/currencies';
-
 export const REQUEST_ID_HEADER = 'x-request-id';
 
 /** The authenticated caller, attached by AccessTokenGuard. */
@@ -24,5 +22,3 @@ export function headerValue(req: Request, name: string): string | undefined {
   if (Array.isArray(raw)) return raw[0];
   return raw;
 }
-
-export type { CurrencyCode };

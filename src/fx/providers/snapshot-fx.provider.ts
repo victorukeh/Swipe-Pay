@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import type { EnvSchema } from '../../config/env.schema';
-import { CURRENCY_CODES, pegOf } from '../../money/currencies';
+import { CurrencyRegistry } from '../../money/currency-registry.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { FxRateProvider, RateTable } from '../fx.types';
 
@@ -26,6 +26,7 @@ export class SnapshotFxProvider implements FxRateProvider {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly currencies: CurrencyRegistry,
     config: ConfigService<EnvSchema, true>,
   ) {
     this.maxAgeMs = config.get('FX_SNAPSHOT_MAX_AGE_SECONDS', { infer: true }) * 1000;
@@ -39,8 +40,7 @@ export class SnapshotFxProvider implements FxRateProvider {
       const perUsd: Record<string, bigint> = {};
       let oldest: Date | null = null;
 
-      for (const code of CURRENCY_CODES) {
-        const peg = pegOf(code);
+      for (const { peg } of this.currencies.all()) {
         const row = rows.find((r) => r.quote === peg);
         if (!row || row.rateScaled <= 0n) return null;
         perUsd[peg] = row.rateScaled;

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import type { EnvSchema } from '../../config/env.schema';
-import { CURRENCY_CODES, pegOf } from '../../money/currencies';
+import { CurrencyRegistry } from '../../money/currency-registry.service';
 import { MoneyUtil } from '../../money/money.util';
 import type { FxRateProvider, RateTable } from '../fx.types';
 
@@ -34,7 +34,10 @@ export class LiveFxProvider implements FxRateProvider {
   private readonly url: string;
   private readonly timeoutMs: number;
 
-  constructor(config: ConfigService<EnvSchema, true>) {
+  constructor(
+    private readonly currencies: CurrencyRegistry,
+    config: ConfigService<EnvSchema, true>,
+  ) {
     this.url = config.get('FX_PROVIDER_URL', { infer: true });
     this.timeoutMs = config.get('FX_PROVIDER_TIMEOUT_MS', { infer: true });
   }
@@ -89,8 +92,7 @@ export class LiveFxProvider implements FxRateProvider {
     }
 
     const perUsd: Record<string, bigint> = {};
-    for (const code of CURRENCY_CODES) {
-      const peg = pegOf(code);
+    for (const { peg } of this.currencies.all()) {
       const raw = rates[peg];
       if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
         // A partial table is unusable: it would make some pairs quotable and

@@ -1,0 +1,42 @@
+[
+  {
+    "code": "cNGN",
+    "peg": "NGN",
+    "decimals": 2,
+    "name": "Nigerian Naira stablecoin",
+    "minorUnit": "kobo",
+    "sortOrder": "0.1"
+  },
+  {
+    "code": "cGHS",
+    "peg": "GHS",
+    "decimals": 2,
+    "name": "Ghanaian Cedi stablecoin",
+    "minorUnit": "pesewa",
+    "sortOrder": "0.2"
+  },
+  {
+    "code": "cXAF",
+    "peg": "XAF",
+    "decimals": 0,
+    "name": "Central African CFA franc stablecoin",
+    "minorUnit": "franc",
+    "sortOrder": "0.3"
+  },
+  {
+    "code": "USDx",
+    "peg": "USD",
+    "decimals": 6,
+    "name": "US Dollar stablecoin",
+    "minorUnit": "micro-dollar",
+    "sortOrder": "0.4"
+  },
+  {
+    "code": "EURx",
+    "peg": "EUR",
+    "decimals": 6,
+    "name": "Euro stablecoin",
+    "minorUnit": "micro-euro",
+    "sortOrder": "0.5"
+  }
+]

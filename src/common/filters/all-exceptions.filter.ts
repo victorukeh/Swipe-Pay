@@ -9,21 +9,10 @@ import {
 import type { Response } from 'express';
 
 import { toAppError } from '../errors/error-mapper';
+import type { ErrorEnvelope } from '../errors/error.types';
 import { type CardtonicRequest } from '../request-context';
 
 const SERVER_ERROR: number = HttpStatus.INTERNAL_SERVER_ERROR;
-
-/** The single error shape this API returns. Documented in the README and OpenAPI spec. */
-export interface ErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    details: Record<string, unknown>;
-    requestId: string;
-    /** True when retrying the identical request could succeed. */
-    retryable: boolean;
-  };
-}
 
 /**
  * One filter, one response shape, for every failure in the app.

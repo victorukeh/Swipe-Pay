@@ -1,6 +1,8 @@
 import type { ConfigService } from '@nestjs/config';
 
 import type { EnvSchema } from '../config/env.schema';
+import type { CurrencyRegistry } from '../money/currency-registry.service';
+import type { CurrencyMeta } from '../money/currency.types';
 
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-code';
@@ -12,14 +14,45 @@ import type { SnapshotFxProvider } from './providers/snapshot-fx.provider';
 
 const ASOF = new Date('2026-10-29T08:00:00.000Z');
 
+function meta(code: string, peg: string, decimals: number, sortOrder: string): CurrencyMeta {
+  return { code, peg, decimals, name: code, minorUnit: 'unit', isActive: true, sortOrder };
+}
+
+const cNGN = meta('cNGN', 'NGN', 2, '0.1');
+const cGHS = meta('cGHS', 'GHS', 2, '0.2');
+const cXAF = meta('cXAF', 'XAF', 0, '0.3');
+const USDx = meta('USDx', 'USD', 6, '0.4');
+const EURx = meta('EURx', 'EUR', 6, '0.5');
+const ALL = [cNGN, cGHS, cXAF, USDx, EURx];
+
+/**
+ * A registry backed by fixed rows instead of the database.
+ *
+ * FxService only ever asks the registry for metadata, never for a connection,
+ * which is what makes this substitution sufficient — and is the reason the
+ * registry is injected rather than imported.
+ */
+function fakeRegistry(currencies: readonly CurrencyMeta[] = ALL): CurrencyRegistry {
+  const byCode = new Map(currencies.map((c) => [c.code, c]));
+  return {
+    all: () => currencies,
+    codes: () => currencies.map((c) => c.code),
+    find: (code: string) => byCode.get(code),
+    require: (code: string) => byCode.get(code)!,
+    usd: () => byCode.get('USDx')!,
+    findByPeg: (peg: string) => currencies.find((c) => c.peg === peg),
+    pairs: () => currencies.flatMap((from) => currencies.map((to) => [from, to] as const)),
+  } as unknown as CurrencyRegistry;
+}
+
 function table(source: RateSourceName, asOf = ASOF): RateTable {
   return {
     perUsd: {
-      USD: MoneyUtil.parseRate('1'),
-      NGN: MoneyUtil.parseRate('1600'),
-      GHS: MoneyUtil.parseRate('16'),
-      XAF: MoneyUtil.parseRate('625'),
-      EUR: MoneyUtil.parseRate('0.92'),
+      USD: MoneyUtil.rateFromString('1'),
+      NGN: MoneyUtil.rateFromString('1600'),
+      GHS: MoneyUtil.rateFromString('16'),
+      XAF: MoneyUtil.rateFromString('625'),
+      EUR: MoneyUtil.rateFromString('0.92'),
     },
     asOf,
     source,
@@ -71,6 +104,7 @@ function build(
     redis?: ReturnType<typeof fakeRedis>;
     snapshots?: ReturnType<typeof fakeSnapshots>;
     ttl?: number;
+    currencies?: readonly CurrencyMeta[];
   } = {},
 ) {
   const redis = opts.redis ?? fakeRedis();
@@ -78,6 +112,7 @@ function build(
   const service = new FxService(
     providers,
     snapshots,
+    fakeRegistry(opts.currencies),
     redis,
     config(opts.ttl === undefined ? {} : { FX_CACHE_TTL_SECONDS: opts.ttl }),
   );
@@ -158,8 +193,8 @@ describe('FxService caching', () => {
     const live = provider('live', table('live'));
     const { service } = build([live]);
 
-    const direct = await service.resolveRate('cNGN', 'EURx');
-    const cached = await service.resolveRate('cNGN', 'EURx');
+    const direct = await service.resolveRate(cNGN, EURx);
+    const cached = await service.resolveRate(cNGN, EURx);
 
     expect(cached.rateScaled).toBe(direct.rateScaled);
   });
@@ -193,8 +228,8 @@ describe('FxService rate derivation', () => {
     const { service } = build([provider('live', table('live'))]);
 
     // 1 USD = 1600 NGN and 1 USD = 16 GHS, so 1 cNGN = 0.01 cGHS.
-    const resolved = await service.resolveRate('cNGN', 'cGHS');
-    expect(MoneyUtil.formatRate(resolved.rateScaled)).toBe('0.01');
+    const resolved = await service.resolveRate(cNGN, cGHS);
+    expect(MoneyUtil.rateToString(resolved.rateScaled)).toBe('0.01');
     expect(resolved.source).toBe('live');
     expect(resolved.asOf).toEqual(ASOF);
   });
@@ -203,9 +238,9 @@ describe('FxService rate derivation', () => {
     const live = provider('live', table('live'));
     const { service } = build([live]);
 
-    const resolved = await service.resolveRate('cNGN', 'cNGN');
+    const resolved = await service.resolveRate(cNGN, cNGN);
 
-    expect(resolved.rateScaled).toBe(MoneyUtil.unitRate);
+    expect(resolved.rateScaled).toBe(MoneyUtil.identityRate);
     expect(resolved.source).toBe('pegged');
     // This is what keeps same-currency transfers working during an FX outage.
     expect(live.fetch).not.toHaveBeenCalled();
@@ -235,17 +270,17 @@ describe('FxService rate derivation', () => {
 
     const { rateTo } = await service.getUsdRates();
 
-    expect(rateTo('USDx')).toBe(MoneyUtil.unitRate);
+    expect(rateTo(USDx)).toBe(MoneyUtil.identityRate);
     // 1600 NGN per USD => 1 cNGN is 0.000625 USDx
-    expect(MoneyUtil.formatRate(rateTo('cNGN'))).toBe('0.000625');
+    expect(MoneyUtil.rateToString(rateTo(cNGN))).toBe('0.000625');
   });
 
   it('raises RATE_UNAVAILABLE for a currency missing from the table', async () => {
-    const partial: RateTable = { ...table('live'), perUsd: { USD: MoneyUtil.parseRate('1') } };
+    const partial: RateTable = { ...table('live'), perUsd: { USD: MoneyUtil.rateFromString('1') } };
     const { service } = build([provider('live', partial)]);
 
-    await expect(service.resolveRate('cNGN', 'USDx')).rejects.toBeInstanceOf(
-      AppError,
-    );
+    // The table is usable for USD but quotes no NGN, so this one pair fails
+    // while the rest of the system keeps working.
+    await expect(service.resolveRate(cNGN, USDx)).rejects.toBeInstanceOf(AppError);
   });
 });

@@ -21,14 +21,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// The five supported mock stablecoins. Each is pegged 1:1 to a fiat currency;
-/// the peg and the number of decimal places live in src/money/currencies.ts.
-enum Currency {
-  cNGN
-  cGHS
-  cXAF
-  USDx
-  EURx
+/// The supported mock stablecoins — the sole authority for which currencies
+/// exist and what precision each admits.
+///
+/// Deliberately a table rather than an enum plus a code constant, so a new
+/// stablecoin is an INSERT and not a release. The trade-off is explicit: the
+/// currency code is no longer a TypeScript literal union, so the compiler can no
+/// longer prove a switch is exhaustive, and validation moved to runtime against
+/// this table (see CurrencyRegistry).
+///
+/// `decimals` is the dangerous column. Changing it reinterprets every amount
+/// already stored — 123456 kobo would stop meaning 1234.56 and start meaning
+/// 123.456 — so a trigger added in the migration refuses to change it on any
+/// currency that already has balances or ledger entries behind it. New
+/// currencies stay freely editable until first use.
+model Currency {
+  /// Ticker as clients send it, e.g. "cNGN". Primary key, and the FK target for
+  /// every money column in the schema.
+  code      String  @id
+  /// ISO-4217 code of the fiat currency this stablecoin tracks 1:1.
+  peg       String
+  /// Decimal places admitted. 2 for cNGN, 0 for cXAF (the CFA franc has no
+  /// subunit in circulation), 6 for USDx.
+  decimals  Int
+  name      String
+  /// Display name of the smallest unit, e.g. "kobo".
+  minorUnit String  @map("minor_unit")
+  /// Lets a currency be withdrawn from new operations without deleting history.
+  isActive  Boolean @default(true) @map("is_active")
+  /// Controls ordering in GET /currencies and in the rate matrix.
+  ///
+  /// A fractional index rather than a counter, so a new currency can be slotted
+  /// between two existing ones without renumbering anything:
+  /// `sort_order = (left + right) / 2`.
+  ///
+  /// NUMERIC, emphatically not a float. Exact decimal arithmetic is what makes
+  /// repeated midpoint insertion safe; with DOUBLE PRECISION the midpoints would
+  /// converge on the precision limit until two keys compared equal and the
+  /// ordering went non-deterministic - the same failure mode this codebase
+  /// avoids for money, with a cheaper blast radius.
+  sortOrder Decimal @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  balances           Balance[]
+  ledgerEntries      LedgerEntry[]
+  sourceTransactions Transaction[] @relation("TransactionSourceCurrency")
+  destTransactions   Transaction[] @relation("TransactionDestCurrency")
+
+  @@index([isActive, sortOrder])
+  @@map("currencies")
 }
 
 enum TransactionType {
@@ -108,21 +151,23 @@ model Credential {
 /// locked during every money movement, in a deterministic order, so concurrent
 /// debits cannot overdraw and two opposing transfers cannot deadlock.
 model Balance {
-  walletId  String   @map("wallet_id") @db.Uuid
-  currency  Currency
+  walletId      String   @map("wallet_id") @db.Uuid
+  currency      String
   /// Minor units. Never negative for customer wallets — guarded in the
   /// application and by a CHECK constraint added in the migration.
-  amount    BigInt   @default(0)
+  amount        BigInt   @default(0)
   /// True only for internal clearing accounts. A clearing account legitimately
   /// carries a negative (credit) position: SYSTEM_MINT goes negative by the total
   /// supply it has issued, and SYSTEM_FX goes negative in whichever currency it is
   /// currently paying out. Customer balances are never allowed to.
-  allowNegative Boolean @default(false) @map("allow_negative")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  allowNegative Boolean  @default(false) @map("allow_negative")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  currencyRef Currency @relation(fields: [currency], references: [code])
 
   @@id([walletId, currency])
+  @@index([currency])
   @@map("balances")
 }
 
@@ -139,10 +184,10 @@ model Transaction {
   sourceWalletId String  @map("source_wallet_id") @db.Uuid
   destWalletId   String? @map("dest_wallet_id") @db.Uuid
 
-  sourceCurrency Currency @map("source_currency")
-  sourceAmount   BigInt   @map("source_amount")
-  destCurrency   Currency @map("dest_currency")
-  destAmount     BigInt   @map("dest_amount")
+  sourceCurrency String @map("source_currency")
+  sourceAmount   BigInt @map("source_amount")
+  destCurrency   String @map("dest_currency")
+  destAmount     BigInt @map("dest_amount")
 
   /// The applied rate, scaled by MoneyUtil.RATE_SCALE (1e12), as an integer.
   /// 1 USD = 1612.45 NGN is stored as 1612450000000000.
@@ -154,8 +199,10 @@ model Transaction {
   idempotencyKey String?  @map("idempotency_key")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  sourceWallet Wallet  @relation("TransactionSource", fields: [sourceWalletId], references: [id])
-  destWallet   Wallet? @relation("TransactionDestination", fields: [destWalletId], references: [id])
+  sourceWallet      Wallet   @relation("TransactionSource", fields: [sourceWalletId], references: [id])
+  destWallet        Wallet?  @relation("TransactionDestination", fields: [destWalletId], references: [id])
+  sourceCurrencyRef Currency @relation("TransactionSourceCurrency", fields: [sourceCurrency], references: [code])
+  destCurrencyRef   Currency @relation("TransactionDestCurrency", fields: [destCurrency], references: [code])
 
   entries  LedgerEntry[]
   attempts TransactionAttempt[]
@@ -184,7 +231,7 @@ model LedgerEntry {
   id            String          @id @db.Uuid
   transactionId String          @map("transaction_id") @db.Uuid
   walletId      String          @map("wallet_id") @db.Uuid
-  currency      Currency
+  currency      String
   direction     LedgerDirection
   /// Always positive; `direction` carries the sign.
   amount        BigInt
@@ -195,6 +242,7 @@ model LedgerEntry {
 
   transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   wallet      Wallet      @relation(fields: [walletId], references: [id])
+  currencyRef Currency    @relation(fields: [currency], references: [code])
 
   @@index([walletId, createdAt(sort: Desc), id])
   @@index([walletId, currency])

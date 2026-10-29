@@ -1,5 +1,6 @@
-import { CURRENCIES, type CurrencyCode, scaleOf } from './currencies';
+import type { CurrencyMeta, MoneyScale } from './currency.types';
 import { MoneyError } from './money.error';
+import type { ConversionResult } from './money.types';
 
 /**
  * All money arithmetic in Cardtonic. Nothing else is allowed to do it.
@@ -59,7 +60,7 @@ export class MoneyUtil {
    * is not a representable amount (the CFA franc has no subunit), so it is an
    * error, not 100 or 101.
    */
-  static parse(input: string, currency: CurrencyCode): bigint {
+  static toMinorUnits(input: string, currency: MoneyScale): bigint {
     if (typeof input !== 'string') {
       throw new MoneyError('INVALID_AMOUNT', 'Amount must be a decimal string', { input });
     }
@@ -78,16 +79,16 @@ export class MoneyUtil {
       );
     }
 
-    const scale = scaleOf(currency);
+    const scale = currency.decimals;
     const [whole = '0', fraction = ''] = raw.split('.');
 
     if (fraction.length > scale) {
       throw new MoneyError(
         'AMOUNT_PRECISION_EXCEEDED',
         scale === 0
-          ? `${currency} has no subunit, so the amount must be a whole number`
-          : `${currency} supports at most ${scale} decimal place(s)`,
-        { input, currency, maxDecimals: scale, provided: fraction.length },
+          ? `${currency.code} has no subunit, so the amount must be a whole number`
+          : `${currency.code} supports at most ${scale} decimal place(s)`,
+        { input, currency: currency.code, maxDecimals: scale, provided: fraction.length },
       );
     }
 
@@ -96,7 +97,7 @@ export class MoneyUtil {
     if (minor > MoneyUtil.MAX_INT64) {
       throw new MoneyError('AMOUNT_OUT_OF_RANGE', 'Amount exceeds the supported range', {
         input,
-        currency,
+        currency: currency.code,
       });
     }
     return minor;
@@ -109,8 +110,8 @@ export class MoneyUtil {
    * reads as "1.000000". A fixed width removes any ambiguity about what
    * precision the value is being asserted at.
    */
-  static format(minor: bigint, currency: CurrencyCode): string {
-    const scale = scaleOf(currency);
+  static toDecimalString(minor: bigint, currency: MoneyScale): string {
+    const scale = currency.decimals;
     const negative = minor < 0n;
     const magnitude = negative ? -minor : minor;
 
@@ -135,7 +136,7 @@ export class MoneyUtil {
    * providers publish however many digits they like — so it is rounded rather
    * than rejected.
    */
-  static parseRate(input: string): bigint {
+  static rateFromString(input: string): bigint {
     const raw = input.trim();
     if (!MoneyUtil.DECIMAL_PATTERN.test(raw)) {
       throw new MoneyError('INVALID_RATE', 'Rate must be an unsigned decimal string', { input });
@@ -171,11 +172,11 @@ export class MoneyUtil {
     if (!Number.isFinite(value) || value <= 0) {
       throw new MoneyError('INVALID_RATE', 'Rate must be a finite positive number', { value });
     }
-    return MoneyUtil.parseRate(value.toFixed(MoneyUtil.RATE_SCALE_EXPONENT));
+    return MoneyUtil.rateFromString(value.toFixed(MoneyUtil.RATE_SCALE_EXPONENT));
   }
 
   /** Render a stored rate for display, trimming trailing zeros for readability. */
-  static formatRate(rateScaled: bigint): string {
+  static rateToString(rateScaled: bigint): string {
     const divisor = MoneyUtil.RATE_SCALE;
     const whole = rateScaled / divisor;
     const fraction = (rateScaled % divisor)
@@ -193,7 +194,7 @@ export class MoneyUtil {
    * scaled by RATE_SCALE, which keeps the full precision of both inputs rather
    * than compounding two roundings.
    */
-  static crossRate(perUsdFromScaled: bigint, perUsdToScaled: bigint): bigint {
+  static crossRateViaUsd(perUsdFromScaled: bigint, perUsdToScaled: bigint): bigint {
     if (perUsdFromScaled <= 0n || perUsdToScaled <= 0n) {
       throw new MoneyError('INVALID_RATE', 'Rates must be greater than zero', {
         perUsdFromScaled: perUsdFromScaled.toString(),
@@ -224,8 +225,8 @@ export class MoneyUtil {
    */
   static convert(params: {
     amount: bigint;
-    from: CurrencyCode;
-    to: CurrencyCode;
+    from: MoneyScale;
+    to: MoneyScale;
     rateScaled: bigint;
   }): ConversionResult {
     const { amount, from, to, rateScaled } = params;
@@ -241,16 +242,16 @@ export class MoneyUtil {
       });
     }
 
-    const numerator = amount * rateScaled * 10n ** BigInt(scaleOf(to));
-    const denominator = MoneyUtil.RATE_SCALE * 10n ** BigInt(scaleOf(from));
+    const numerator = amount * rateScaled * 10n ** BigInt(to.decimals);
+    const denominator = MoneyUtil.RATE_SCALE * 10n ** BigInt(from.decimals);
 
     const converted = numerator / denominator;
     const remainder = numerator % denominator;
 
     if (converted > MoneyUtil.MAX_INT64) {
       throw new MoneyError('AMOUNT_OUT_OF_RANGE', 'Converted amount exceeds the supported range', {
-        from,
-        to,
+        from: from.code,
+        to: to.code,
       });
     }
 
@@ -263,16 +264,16 @@ export class MoneyUtil {
    * Each leg is floored independently, which is the conservative direction: a
    * reported total is never higher than the true one.
    */
-  static sumAsUsd(
-    balances: ReadonlyArray<{ currency: CurrencyCode; amount: bigint }>,
-    rateTo: (from: CurrencyCode) => bigint,
-    usdCurrency: CurrencyCode,
+  static totalInUsd<T extends MoneyScale>(
+    balances: ReadonlyArray<{ currency: T; amount: bigint }>,
+    rateTo: (from: T) => bigint,
+    usdCurrency: MoneyScale,
   ): bigint {
     let total = 0n;
     for (const { currency, amount } of balances) {
       if (amount === 0n) continue;
       total +=
-        currency === usdCurrency
+        currency.code === usdCurrency.code
           ? amount
           : MoneyUtil.convert({
               amount,
@@ -292,35 +293,24 @@ export class MoneyUtil {
   }
 
   /** The identity rate, for same-currency "conversions". */
-  static get unitRate(): bigint {
+  static get identityRate(): bigint {
     return MoneyUtil.RATE_SCALE;
   }
 
   /** Smallest representable positive amount in a currency, as a decimal string. */
-  static minorUnitOf(currency: CurrencyCode): string {
-    return MoneyUtil.format(1n, currency);
+  static smallestAmountOf(currency: MoneyScale): string {
+    return MoneyUtil.toDecimalString(1n, currency);
   }
 
   /** Human description of a currency, for GET /currencies. */
-  static describe(currency: CurrencyCode) {
-    const meta = CURRENCIES[currency];
+  static describeCurrency(meta: CurrencyMeta) {
     return {
-      code: currency,
+      code: meta.code,
       name: meta.name,
       peg: meta.peg,
-      decimals: meta.scale,
+      decimals: meta.decimals,
       minorUnit: meta.minorUnit,
-      smallestAmount: MoneyUtil.minorUnitOf(currency),
+      smallestAmount: MoneyUtil.smallestAmountOf(meta),
     };
   }
-}
-
-export interface ConversionResult {
-  /** The converted amount in destination minor units, floored. */
-  readonly amount: bigint;
-  /** Discarded numerator; `remainder / denominator` destination minor units. */
-  readonly remainder: bigint;
-  readonly denominator: bigint;
-  /** True when the conversion was exactly representable. */
-  readonly exact: boolean;
 }

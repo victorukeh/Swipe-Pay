@@ -7,6 +7,7 @@ import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { validateEnv } from './config/env.schema';
 import { FxModule } from './fx/fx.module';
+import { MoneyModule } from './money/money.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 
@@ -20,6 +21,7 @@ import { RedisModule } from './redis/redis.module';
     }),
     PrismaModule,
     RedisModule,
+    MoneyModule,
     FxModule,
   ],
   providers: [

@@ -38,8 +38,6 @@ export class AppError extends Error {
     this.retryable = params.retryable ?? params.status >= 500;
   }
 
-  // --- Validation / money -----------------------------------------------------
-
   static validationFailed(details: Record<string, unknown>): AppError {
     return new AppError({
       code: ErrorCode.VALIDATION_FAILED,
@@ -57,8 +55,6 @@ export class AppError extends Error {
       details: { currency },
     });
   }
-
-  // --- Auth -------------------------------------------------------------------
 
   static unauthenticated(message = 'Authentication required'): AppError {
     return new AppError({
@@ -111,8 +107,6 @@ export class AppError extends Error {
     });
   }
 
-  // --- Not found --------------------------------------------------------------
-
   static walletNotFound(walletId?: string): AppError {
     return new AppError({
       code: ErrorCode.WALLET_NOT_FOUND,
@@ -130,8 +124,6 @@ export class AppError extends Error {
       details: id === undefined ? {} : { transactionId: id },
     });
   }
-
-  // --- Conflict ---------------------------------------------------------------
 
   static walletContactTaken(field: 'email' | 'phone'): AppError {
     return new AppError({
@@ -170,8 +162,6 @@ export class AppError extends Error {
       details: { idempotencyKey: key },
     });
   }
-
-  // --- Money rules ------------------------------------------------------------
 
   static insufficientFunds(params: {
     currency: string;
@@ -212,8 +202,6 @@ export class AppError extends Error {
       details: params,
     });
   }
-
-  // --- Dependencies -----------------------------------------------------------
 
   static rateUnavailable(details: Record<string, unknown> = {}): AppError {
     return new AppError({

@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 
 import { AppError } from '../common/errors/app-error';
 import type { EnvSchema } from '../config/env.schema';
-import { CURRENCY_CODES, type CurrencyCode, pegOf } from '../money/currencies';
+import { CurrencyRegistry } from '../money/currency-registry.service';
+import type { CurrencyCode, CurrencyMeta } from '../money/currency.types';
 import { MoneyUtil } from '../money/money.util';
 import { RedisService } from '../redis/redis.service';
 import {
@@ -45,6 +46,7 @@ export class FxService {
   constructor(
     @Inject(FX_RATE_PROVIDERS) private readonly providers: readonly FxRateProvider[],
     private readonly snapshots: SnapshotFxProvider,
+    private readonly currencies: CurrencyRegistry,
     private readonly redis: RedisService,
     config: ConfigService<EnvSchema, true>,
   ) {
@@ -80,17 +82,23 @@ export class FxService {
   }
 
   /** The rate to apply when converting `from` into `to`. */
-  async resolveRate(from: CurrencyCode, to: CurrencyCode): Promise<ResolvedRate> {
-    if (from === to) {
+  async resolveRate(from: CurrencyMeta, to: CurrencyMeta): Promise<ResolvedRate> {
+    if (from.code === to.code) {
       // A stablecoin is pegged 1:1 to itself; no provider involvement, and no
       // reason for a same-currency transfer to fail when FX is down.
-      return { from, to, rateScaled: MoneyUtil.unitRate, asOf: new Date(), source: 'pegged' };
+      return {
+        from: from.code,
+        to: to.code,
+        rateScaled: MoneyUtil.identityRate,
+        asOf: new Date(),
+        source: 'pegged',
+      };
     }
 
     const table = await this.getTable();
     return {
-      from,
-      to,
+      from: from.code,
+      to: to.code,
       rateScaled: FxService.crossFromTable(table, from, to),
       asOf: table.asOf,
       source: table.source,
@@ -107,12 +115,15 @@ export class FxService {
     const rates: Array<{ from: CurrencyCode; to: CurrencyCode; rate: string; rateScaled: bigint }> =
       [];
 
-    for (const from of CURRENCY_CODES) {
-      for (const to of CURRENCY_CODES) {
-        const rateScaled =
-          from === to ? MoneyUtil.unitRate : FxService.crossFromTable(table, from, to);
-        rates.push({ from, to, rate: MoneyUtil.formatRate(rateScaled), rateScaled });
-      }
+    for (const [from, to] of this.currencies.pairs()) {
+      const rateScaled =
+        from.code === to.code ? MoneyUtil.identityRate : FxService.crossFromTable(table, from, to);
+      rates.push({
+        from: from.code,
+        to: to.code,
+        rate: MoneyUtil.rateToString(rateScaled),
+        rateScaled,
+      });
     }
 
     return { asOf: table.asOf, source: table.source, rates };
@@ -122,14 +133,17 @@ export class FxService {
   async getUsdRates(): Promise<{
     asOf: Date;
     source: RateSourceName;
-    rateTo: (from: CurrencyCode) => bigint;
+    rateTo: (from: CurrencyMeta) => bigint;
   }> {
     const table = await this.getTable();
+    const usd = this.currencies.usd();
     return {
       asOf: table.asOf,
       source: table.source,
       rateTo: (from) =>
-        from === 'USDx' ? MoneyUtil.unitRate : FxService.crossFromTable(table, from, 'USDx'),
+        from.code === usd.code
+          ? MoneyUtil.identityRate
+          : FxService.crossFromTable(table, from, usd),
     };
   }
 
@@ -140,16 +154,16 @@ export class FxService {
    * USD-based table: a cNGN -> EURx rate can never be assembled from two
    * quotes taken hours apart.
    */
-  private static crossFromTable(table: RateTable, from: CurrencyCode, to: CurrencyCode): bigint {
-    const fromPeg = pegOf(from);
-    const toPeg = pegOf(to);
-    const perUsdFrom = table.perUsd[fromPeg];
-    const perUsdTo = table.perUsd[toPeg];
+  private static crossFromTable(table: RateTable, from: CurrencyMeta, to: CurrencyMeta): bigint {
+    const perUsdFrom = table.perUsd[from.peg];
+    const perUsdTo = table.perUsd[to.peg];
 
     if (perUsdFrom === undefined || perUsdTo === undefined) {
-      throw AppError.rateUnavailable({ from, to });
+      // A currency whose peg the provider does not quote cannot be converted,
+      // even though the rest of the table is usable.
+      throw AppError.rateUnavailable({ from: from.code, to: to.code });
     }
-    return MoneyUtil.crossRate(perUsdFrom, perUsdTo);
+    return MoneyUtil.crossRateViaUsd(perUsdFrom, perUsdTo);
   }
 
   private async readCache(): Promise<RateTable | null> {

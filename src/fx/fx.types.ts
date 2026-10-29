@@ -1,4 +1,4 @@
-import type { CurrencyCode } from '../money/currencies';
+import type { CurrencyCode } from '../money/currency.types';
 
 /** How a rate was obtained, in descending order of freshness. */
 export type RateSourceName = 'live' | 'cached' | 'stale' | 'fallback' | 'pegged';
