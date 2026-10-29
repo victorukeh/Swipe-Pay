@@ -1,7 +1,7 @@
 {
   "name": "cardtonic",
   "version": "1.0.0",
-  "description": "Cardtonic — a cross-border stablecoin payment sandbox (Operation Borderless)",
+  "description": "Cardtonic \u2014 a cross-border stablecoin payment sandbox (Operation Borderless)",
   "license": "MIT",
   "private": true,
   "packageManager": "yarn@4.18.1",
@@ -29,9 +29,6 @@
     "db:reset": "prisma migrate reset --force",
     "docs:openapi": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
     "docs:check": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts --check"
-  },
-  "prisma": {
-    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.3.2",

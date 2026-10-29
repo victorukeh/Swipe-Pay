@@ -1,5 +1,14 @@
 import { plainToInstance } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, validateSync } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+  validateSync,
+} from 'class-validator';
 
 /**
  * Fail at boot, not at first request. A misconfigured money service that starts

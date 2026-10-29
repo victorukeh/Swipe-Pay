@@ -1,7 +1,7 @@
 import { applyMigrations, persistInfraEnv, startInfra } from './containers';
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __CARDTONIC_INFRA_STOP__: (() => Promise<void>) | undefined;
 }
 
