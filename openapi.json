@@ -22,13 +22,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TokenPairResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "INVALID_CREDENTIALS"
+            "description": "INVALID_CREDENTIALS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "summary": "Log in: exchange credentials for a token pair",
@@ -41,8 +76,29 @@
         "operationId": "logout",
         "parameters": [],
         "responses": {
-          "204": {
-            "description": ""
+          "401": {
+            "description": "UNAUTHENTICATED or TOKEN_REVOKED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -77,13 +133,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPairResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TokenPairResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "TOKEN_REVOKED, TOKEN_EXPIRED or TOKEN_WRONG_TYPE"
+            "description": "TOKEN_REVOKED, TOKEN_EXPIRED or TOKEN_WRONG_TYPE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "summary": "Rotate a refresh token for a new pair",
@@ -103,13 +194,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RatesResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/RatesResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "503": {
-            "description": "RATE_UNAVAILABLE — every tier of the rate provider chain failed."
+            "description": "RATE_UNAVAILABLE — every tier of the rate provider chain failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "summary": "Current conversion rates between all supported stablecoins",
@@ -129,10 +255,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CurrencyResponse"
-                  }
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CurrencyResponse"
+                          }
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -165,13 +305,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateWalletResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/CreateWalletResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "409": {
-            "description": "WALLET_CONTACT_TAKEN -- that email or phone already has a wallet."
+            "description": "WALLET_CONTACT_TAKEN -- that email or phone already has a wallet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "summary": "Create a wallet",
@@ -189,10 +364,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/WalletResponse"
-                  }
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WalletResponse"
+                          }
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -241,19 +430,96 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TransactionResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TransactionResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "IDEMPOTENCY_KEY_REQUIRED, VALIDATION_FAILED or INVALID_AMOUNT"
+            "description": "IDEMPOTENCY_KEY_REQUIRED, VALIDATION_FAILED or INVALID_AMOUNT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "409": {
-            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "422": {
-            "description": "UNSUPPORTED_CURRENCY, AMOUNT_PRECISION_EXCEEDED or IDEMPOTENCY_KEY_REUSED"
+            "description": "UNSUPPORTED_CURRENCY, AMOUNT_PRECISION_EXCEEDED or IDEMPOTENCY_KEY_REUSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -299,19 +565,96 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TransactionResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TransactionResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "409": {
-            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "422": {
-            "description": "INSUFFICIENT_FUNDS, SAME_CURRENCY_SWAP, AMOUNT_TOO_SMALL_TO_CONVERT, UNSUPPORTED_CURRENCY or AMOUNT_PRECISION_EXCEEDED"
+            "description": "INSUFFICIENT_FUNDS, SAME_CURRENCY_SWAP, AMOUNT_TOO_SMALL_TO_CONVERT, UNSUPPORTED_CURRENCY or AMOUNT_PRECISION_EXCEEDED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "503": {
-            "description": "RATE_UNAVAILABLE"
+            "description": "RATE_UNAVAILABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -357,19 +700,96 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TransactionResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TransactionResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "409": {
-            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "422": {
-            "description": "INSUFFICIENT_FUNDS, SELF_TRANSFER, AMOUNT_TOO_SMALL_TO_CONVERT or UNSUPPORTED_CURRENCY"
+            "description": "INSUFFICIENT_FUNDS, SELF_TRANSFER, AMOUNT_TOO_SMALL_TO_CONVERT or UNSUPPORTED_CURRENCY",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "503": {
-            "description": "RATE_UNAVAILABLE"
+            "description": "RATE_UNAVAILABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -457,7 +877,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TransactionPageResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/TransactionPageResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -494,16 +928,72 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HistoryEntryResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/HistoryEntryResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
           },
           "403": {
-            "description": "FORBIDDEN_WALLET_ACCESS"
+            "description": "FORBIDDEN_WALLET_ACCESS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "404": {
-            "description": "TRANSACTION_NOT_FOUND"
+            "description": "TRANSACTION_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -575,7 +1065,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AttemptPageResponse"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/AttemptPageResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -599,10 +1103,52 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Service is ok or degraded."
+            "description": "Service is ok or degraded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           },
           "503": {
-            "description": "PostgreSQL is unreachable."
+            "description": "PostgreSQL is unreachable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "summary": "Service health",
@@ -660,24 +1206,69 @@
       }
     },
     "schemas": {
-      "LoginDto": {
+      "ResponseEnvelope": {
         "type": "object",
         "properties": {
-          "email": {
-            "type": "string",
-            "example": "ada@example.com"
+          "requestSuccessful": {
+            "type": "boolean",
+            "description": "True for any 2xx response, false otherwise. Check this first.",
+            "example": true
           },
-          "phone": {
-            "type": "string",
-            "example": "+2348012345678"
+          "requestCode": {
+            "type": "number",
+            "description": "The HTTP status code, repeated here so the body is self-describing.",
+            "example": 200
           },
-          "password": {
+          "requestMessage": {
             "type": "string",
-            "example": "correct-horse-battery-staple"
+            "description": "A human-readable summary. Safe to log; on failure it is the same message as the error, and for a 5xx it is deliberately generic.",
+            "example": "Wallet balances retrieved"
+          },
+          "requestData": {
+            "type": "object",
+            "description": "The payload on success. On failure it carries the error specifics: `errorCode`, `details`, `requestId` and `retryable`. Null when there is nothing to return."
           }
         },
         "required": [
-          "password"
+          "requestSuccessful",
+          "requestCode",
+          "requestMessage",
+          "requestData"
+        ]
+      },
+      "ErrorPayload": {
+        "type": "object",
+        "properties": {
+          "errorCode": {
+            "type": "string",
+            "description": "Stable machine-readable code. Branch on this, never on requestCode alone.",
+            "example": "INSUFFICIENT_FUNDS"
+          },
+          "details": {
+            "type": "object",
+            "description": "Structured context for the failure. Empty for a 5xx.",
+            "example": {
+              "currency": "USDx",
+              "requested": "50.000000",
+              "available": "10.000000"
+            }
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Correlation id, also returned as the X-Request-Id header.",
+            "example": "01a186de-eff5-7145-aec9-fef34adc48d9"
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "True when retrying the identical request could succeed.",
+            "example": false
+          }
+        },
+        "required": [
+          "errorCode",
+          "details",
+          "requestId",
+          "retryable"
         ]
       },
       "TokenPairResponse": {
@@ -712,6 +1303,26 @@
           "refreshToken",
           "expiresIn",
           "tokenType"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "ada@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+2348012345678"
+          },
+          "password": {
+            "type": "string",
+            "example": "correct-horse-battery-staple"
+          }
+        },
+        "required": [
+          "password"
         ]
       },
       "RefreshDto": {
@@ -829,31 +1440,6 @@
           "smallestAmount"
         ]
       },
-      "CreateWalletDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "Email address. Either this or `phone` is required. Stored lower-cased.",
-            "example": "ada@example.com"
-          },
-          "phone": {
-            "type": "string",
-            "description": "Mobile number in E.164 format. Either this or `email` is required.",
-            "example": "+2348012345678"
-          },
-          "password": {
-            "type": "string",
-            "description": "At least 12 characters. Hashed with scrypt; never stored or logged in clear.",
-            "example": "correct-horse-battery-staple",
-            "minLength": 12,
-            "maxLength": 256
-          }
-        },
-        "required": [
-          "password"
-        ]
-      },
       "BalanceResponse": {
         "type": "object",
         "properties": {
@@ -949,6 +1535,31 @@
           "tokens"
         ]
       },
+      "CreateWalletDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address. Either this or `phone` is required. Stored lower-cased.",
+            "example": "ada@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Mobile number in E.164 format. Either this or `email` is required.",
+            "example": "+2348012345678"
+          },
+          "password": {
+            "type": "string",
+            "description": "At least 12 characters. Hashed with scrypt; never stored or logged in clear.",
+            "example": "correct-horse-battery-staple",
+            "minLength": 12,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
       "WalletResponse": {
         "type": "object",
         "properties": {
@@ -1013,25 +1624,6 @@
           "totalCurrency",
           "ratesAsOf",
           "ratesSource"
-        ]
-      },
-      "DepositDto": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "string",
-            "description": "Currency to credit. See GET /currencies.",
-            "example": "cNGN"
-          },
-          "amount": {
-            "type": "string",
-            "description": "Amount as an unsigned decimal string, at most as precise as the currency allows. A string rather than a number so no floating-point rounding can occur in transit.",
-            "example": "1500.00"
-          }
-        },
-        "required": [
-          "currency",
-          "amount"
         ]
       },
       "TransactionResponse": {
@@ -1126,6 +1718,25 @@
           "rateSource",
           "rateAsOf",
           "createdAt"
+        ]
+      },
+      "DepositDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency to credit. See GET /currencies.",
+            "example": "cNGN"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as an unsigned decimal string, at most as precise as the currency allows. A string rather than a number so no floating-point rounding can occur in transit.",
+            "example": "1500.00"
+          }
+        },
+        "required": [
+          "currency",
+          "amount"
         ]
       },
       "SwapDto": {
@@ -1396,6 +2007,91 @@
         "required": [
           "items",
           "hasMore"
+        ]
+      },
+      "HealthFxCheck": {
+        "type": "object",
+        "properties": {
+          "reachable": {
+            "type": "boolean",
+            "description": "False only when no tier of the rate chain could answer."
+          },
+          "source": {
+            "type": "string",
+            "description": "Which tier served the last rate lookup.",
+            "enum": [
+              "live",
+              "cached",
+              "stale",
+              "fallback"
+            ],
+            "nullable": true,
+            "example": "live"
+          },
+          "asOf": {
+            "type": "object",
+            "nullable": true,
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "degraded": {
+            "type": "boolean",
+            "description": "True only when the live provider could not be reached. A warm cache is the normal operating mode and is not degradation."
+          }
+        },
+        "required": [
+          "reachable",
+          "source",
+          "asOf",
+          "degraded"
+        ]
+      },
+      "HealthChecks": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "boolean",
+            "description": "PostgreSQL reachable. Load-bearing: false means `down`."
+          },
+          "redis": {
+            "type": "boolean",
+            "description": "Redis reachable. False degrades but does not stop the API."
+          },
+          "currencies": {
+            "type": "number",
+            "description": "Active currencies loaded at boot.",
+            "example": 5
+          },
+          "fx": {
+            "$ref": "#/components/schemas/HealthFxCheck"
+          }
+        },
+        "required": [
+          "database",
+          "redis",
+          "currencies",
+          "fx"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "`ok` when everything is reachable. `degraded` when Redis is down or rates have fallen back to a snapshot or the static table -- the API still works. `down`, with a 503, only when PostgreSQL is unreachable, since no money can move then.",
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ],
+            "example": "ok"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HealthChecks"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
         ]
       }
     }

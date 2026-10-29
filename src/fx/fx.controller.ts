@@ -1,10 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
-import {
-  ApiOkResponse,
-  ApiOperation,
-  ApiServiceUnavailableResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope';
+import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 
 import { Public } from '../auth/public.decorator';
 import { CurrencyRegistry } from '../money/currency-registry.service';
@@ -30,10 +28,9 @@ export class FxController {
       'provider chain served them. `degraded: true` means the live provider was unavailable and a ' +
       'cached, stale or static rate was used instead.',
   })
-  @ApiOkResponse({ type: RatesResponse })
-  @ApiServiceUnavailableResponse({
-    description: 'RATE_UNAVAILABLE — every tier of the rate provider chain failed.',
-  })
+  @ApiEnvelope(RatesResponse)
+  @ApiEnvelopeError(503, 'RATE_UNAVAILABLE — every tier of the rate provider chain failed.')
+  @ResponseMessage('Rates retrieved')
   async rates(): Promise<RatesResponse> {
     const { asOf, source, rates } = await this.fx.getMatrix();
     return {
@@ -52,7 +49,8 @@ export class FxController {
       'Note cXAF has 0 decimals: the Central African CFA franc has no subunit in circulation, so ' +
       'an amount like "1500.50" is rejected rather than rounded.',
   })
-  @ApiOkResponse({ type: [CurrencyResponse] })
+  @ApiEnvelope(CurrencyResponse, { isArray: true })
+  @ResponseMessage('Currencies retrieved')
   listCurrencies(): CurrencyResponse[] {
     return this.currencies.all().map((meta) => MoneyUtil.describeCurrency(meta));
   }

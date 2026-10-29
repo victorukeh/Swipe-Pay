@@ -1,7 +1,7 @@
 import { JwtService } from '@nestjs/jwt';
 
 import { createHarness, seedTestRates, uniqueEmail, type Harness } from './app-harness';
-import { createWallet, errorCode } from './helpers';
+import { createWallet, data, errorCode } from './helpers';
 
 const PASSWORD = 'correct-horse-battery-staple';
 
@@ -42,7 +42,7 @@ describe('authentication', () => {
         .send({ email: wallet.email, password: PASSWORD })
         .expect(201);
 
-      const body = res.body as { walletId: string; accessToken: string; tokenType: string };
+      const body = data<{ walletId: string; accessToken: string; tokenType: string }>(res);
       expect(body.walletId).toBe(wallet.id);
       expect(body.tokenType).toBe('Bearer');
 
@@ -174,7 +174,7 @@ describe('authentication', () => {
         .send({ refreshToken: wallet.refreshToken })
         .expect(201);
 
-      const next = (rotated.body as { refreshToken: string }).refreshToken;
+      const next = data<{ refreshToken: string }>(rotated).refreshToken;
       expect(next).not.toBe(wallet.refreshToken);
 
       // Replaying the original is the signal that a refresh token was captured.
@@ -223,7 +223,7 @@ describe('authentication', () => {
         .delete('/v1/auth/tokens')
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .send({})
-        .expect(204);
+        .expect(200);
 
       // A JWT is self-contained, so the only way to invalidate one before it
       // expires is the denylist -- this is what proves it works.
@@ -243,7 +243,7 @@ describe('authentication', () => {
         .delete('/v1/auth/tokens')
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .send({ refreshToken: wallet.refreshToken })
-        .expect(204);
+        .expect(200);
 
       const res = await h
         .http()
@@ -261,7 +261,7 @@ describe('authentication', () => {
         .delete('/v1/auth/tokens')
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .send({ refreshToken: 'not-a-token' })
-        .expect(204);
+        .expect(200);
 
       // Revoking the access token is the part that matters; a malformed refresh
       // token must not prevent it.

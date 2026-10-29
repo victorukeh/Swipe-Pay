@@ -18,7 +18,7 @@ Five mock stablecoins, each pegged 1:1 to a fiat currency:
 is not a simplification — `"100.50"` cXAF is rejected rather than rounded.
 
 ```
-226 tests  ·  TypeScript strict  ·  docker compose up
+235 tests  ·  TypeScript strict  ·  docker compose up
 ```
 
 ---
@@ -77,6 +77,62 @@ the committed release, and `corepack enable` works too.
 
 ---
 
+## Response envelope
+
+**Every** response from this API — success or failure — has the same four keys:
+
+```json
+{
+  "requestSuccessful": true,
+  "requestCode": 200,
+  "requestMessage": "Wallet balances retrieved",
+  "requestData": { }
+}
+```
+
+| Field | |
+|---|---|
+| `requestSuccessful` | `true` for any 2xx, `false` otherwise. Check this first |
+| `requestCode` | the HTTP status, repeated so the body is self-describing |
+| `requestMessage` | a human-readable summary; safe to log |
+| `requestData` | the payload on success, the error specifics on failure, `null` when there is nothing to return |
+
+One shape means a client writes one unwrapping path instead of branching on
+whether a call succeeded before it knows where to look. The status is duplicated
+in the body deliberately: a client that only has the payload — a log line, a
+queued webhook, an SDK that discards the response object — can still tell what
+happened.
+
+On failure, `requestData` carries the error:
+
+```json
+{
+  "requestSuccessful": false,
+  "requestCode": 422,
+  "requestMessage": "Insufficient funds",
+  "requestData": {
+    "errorCode": "INSUFFICIENT_FUNDS",
+    "details": { "currency": "USDx", "requested": "50.000000", "available": "10.000000" },
+    "requestId": "01a186de-eff5-7145-aec9-fef34adc48d9",
+    "retryable": false
+  }
+}
+```
+
+`errorCode` is nested rather than placed in `requestCode` because the two answer
+different questions: the status says what kind of failure it was in HTTP terms,
+`errorCode` says exactly which one. Several distinct conditions return 422, so
+**branch on `errorCode`.**
+
+Two consequences worth knowing:
+
+- **Logout returns `200`, not `204`.** A 204 has no body to put the envelope in,
+  so the route returns 200 with `requestData: null` rather than breaking the
+  one-shape rule.
+- Successes are enveloped by a global interceptor and failures by the global
+  exception filter, but both call the same `envelope()` helper — two
+  implementations of one shape drift.
+
 ## Walkthrough
 
 Amounts are **decimal strings**, never JSON numbers. `JSON.parse('{"amount":0.1}')`
@@ -92,23 +148,28 @@ curl -X POST localhost:3000/v1/wallets \
 
 ```json
 {
-  "id": "01a186de-ebf2-776d-855a-171636dc7355",
-  "email": "ada@example.com",
-  "phone": null,
-  "balances": [
-    { "currency": "cNGN", "amount": "0.00", "usdEquivalent": "0.000000" },
-    { "currency": "cXAF", "amount": "0",    "usdEquivalent": "0.000000" }
-  ],
-  "totalUsdEquivalent": "0.000000",
-  "totalCurrency": "USDx",
-  "ratesAsOf": "2026-10-29T08:00:00.000Z",
-  "ratesSource": "live",
-  "tokens": {
-    "walletId": "01a186de-ebf2-776d-855a-171636dc7355",
-    "accessToken": "eyJhbGciOi...",
-    "refreshToken": "eyJhbGciOi...",
-    "expiresIn": 900,
-    "tokenType": "Bearer"
+  "requestSuccessful": true,
+  "requestCode": 201,
+  "requestMessage": "Wallet created",
+  "requestData": {
+    "id": "01a186de-ebf2-776d-855a-171636dc7355",
+    "email": "ada@example.com",
+    "phone": null,
+    "balances": [
+      { "currency": "cNGN", "amount": "0.00", "usdEquivalent": "0.000000" },
+      { "currency": "cXAF", "amount": "0",    "usdEquivalent": "0.000000" }
+    ],
+    "totalUsdEquivalent": "0.000000",
+    "totalCurrency": "USDx",
+    "ratesAsOf": "2026-10-29T08:00:00.000Z",
+    "ratesSource": "live",
+    "tokens": {
+      "walletId": "01a186de-ebf2-776d-855a-171636dc7355",
+      "accessToken": "eyJhbGciOi...",
+      "refreshToken": "eyJhbGciOi...",
+      "expiresIn": 900,
+      "tokenType": "Bearer"
+    }
   }
 }
 ```
@@ -131,14 +192,19 @@ curl -X POST localhost:3000/v1/deposits \
 
 ```json
 {
-  "id": "01a186e1-3c21-7a0e-9f22-6b1d2e4a8c90",
-  "type": "DEPOSIT",
-  "direction": "CREDIT",
-  "sourceCurrency": "cNGN", "sourceAmount": "1500000.00",
-  "destCurrency": "cNGN",   "destAmount": "1500000.00",
-  "rate": "1", "rateSource": "PEGGED",
-  "rateAsOf": "2026-10-29T08:09:12.000Z",
-  "createdAt": "2026-10-29T08:09:12.401Z"
+  "requestSuccessful": true,
+  "requestCode": 201,
+  "requestMessage": "Deposit completed",
+  "requestData": {
+    "id": "01a186e1-3c21-7a0e-9f22-6b1d2e4a8c90",
+    "type": "DEPOSIT",
+    "direction": "CREDIT",
+    "sourceCurrency": "cNGN", "sourceAmount": "1500000.00",
+    "destCurrency": "cNGN",   "destAmount": "1500000.00",
+    "rate": "1", "rateSource": "PEGGED",
+    "rateAsOf": "2026-10-29T08:09:12.000Z",
+    "createdAt": "2026-10-29T08:09:12.401Z"
+  }
 }
 ```
 
@@ -154,10 +220,13 @@ curl -X POST localhost:3000/v1/swaps \
 
 ```json
 {
-  "type": "SWAP",
-  "sourceCurrency": "cNGN", "sourceAmount": "500000.00",
-  "destCurrency": "USDx",   "destAmount": "371.405660",
-  "rate": "0.00074281132", "rateSource": "LIVE"
+  "requestSuccessful": true, "requestCode": 201, "requestMessage": "Swap completed",
+  "requestData": {
+    "type": "SWAP",
+    "sourceCurrency": "cNGN", "sourceAmount": "500000.00",
+    "destCurrency": "USDx",   "destAmount": "371.405660",
+    "rate": "0.00074281132", "rateSource": "LIVE"
+  }
 }
 ```
 
@@ -174,14 +243,17 @@ curl -X POST localhost:3000/v1/transfers \
 
 ```json
 {
-  "type": "TRANSFER", "direction": "DEBIT",
-  "sourceWalletId": "01a186de-ebf2-776d-855a-171636dc7355",
-  "destWalletId":   "01a186df-7c10-7bb1-9a44-2f8e1c3d5a67",
-  "sourceCurrency": "USDx", "sourceAmount": "100.000000",
-  "destCurrency": "EURx",   "destAmount": "89.721500",
-  "rate": "0.897215", "rateSource": "LIVE",
-  "rateAsOf": "2026-10-29T08:00:00.000Z",
-  "createdAt": "2026-10-29T08:11:02.118Z"
+  "requestSuccessful": true, "requestCode": 201, "requestMessage": "Transfer completed",
+  "requestData": {
+    "type": "TRANSFER", "direction": "DEBIT",
+    "sourceWalletId": "01a186de-ebf2-776d-855a-171636dc7355",
+    "destWalletId":   "01a186df-7c10-7bb1-9a44-2f8e1c3d5a67",
+    "sourceCurrency": "USDx", "sourceAmount": "100.000000",
+    "destCurrency": "EURx",   "destAmount": "89.721500",
+    "rate": "0.897215", "rateSource": "LIVE",
+    "rateAsOf": "2026-10-29T08:00:00.000Z",
+    "createdAt": "2026-10-29T08:11:02.118Z"
+  }
 }
 ```
 
@@ -199,8 +271,10 @@ curl "localhost:3000/v1/transactions?type=TRANSFER&currency=USDx&limit=20" \
 
 ```json
 {
-  "items": [
-    {
+  "requestSuccessful": true, "requestCode": 200, "requestMessage": "Transactions retrieved",
+  "requestData": {
+    "items": [
+      {
       "id": "01a186e1-3c21-7a0e-9f22-6b1d2e4a8c90",
       "entryId": "01a186e1-3c22-7f41-b8d3-9a7e5c1f2b48",
       "type": "TRANSFER", "direction": "DEBIT",
@@ -209,11 +283,12 @@ curl "localhost:3000/v1/transactions?type=TRANSFER&currency=USDx&limit=20" \
       "sourceCurrency": "USDx", "sourceAmount": "100.000000",
       "destCurrency": "EURx",   "destAmount": "89.721500",
       "rate": "0.897215", "rateSource": "LIVE",
-      "createdAt": "2026-10-29T08:11:02.118Z"
-    }
-  ],
-  "nextCursor": "MjAyNi0xMC0yOVQwODoxMTowMi4xMThafDAxYTE4NmUx",
-  "hasMore": true
+        "createdAt": "2026-10-29T08:11:02.118Z"
+      }
+    ],
+    "nextCursor": "MjAyNi0xMC0yOVQwODoxMTowMi4xMThafDAxYTE4NmUx",
+    "hasMore": true
+  }
 }
 ```
 
@@ -228,13 +303,16 @@ curl localhost:3000/v1/rates
 
 ```json
 {
-  "asOf": "2026-10-29T08:00:00.000Z",
-  "source": "live",
-  "degraded": false,
-  "rates": [
-    { "from": "cNGN", "to": "USDx", "rate": "0.00074281132" },
-    { "from": "USDx", "to": "EURx", "rate": "0.897215" }
-  ]
+  "requestSuccessful": true, "requestCode": 200, "requestMessage": "Rates retrieved",
+  "requestData": {
+    "asOf": "2026-10-29T08:00:00.000Z",
+    "source": "live",
+    "degraded": false,
+    "rates": [
+      { "from": "cNGN", "to": "USDx", "rate": "0.00074281132" },
+      { "from": "USDx", "to": "EURx", "rate": "0.897215" }
+    ]
+  }
 }
 ```
 
@@ -721,13 +799,15 @@ operator can take a request id out of a bug report and find the exact operation.
 
 ## Error contract
 
-Every failure returns the same envelope:
+Every failure uses the standard envelope, with the specifics in `requestData`:
 
 ```json
 {
-  "error": {
-    "code": "INSUFFICIENT_FUNDS",
-    "message": "Insufficient funds",
+  "requestSuccessful": false,
+  "requestCode": 422,
+  "requestMessage": "Insufficient funds",
+  "requestData": {
+    "errorCode": "INSUFFICIENT_FUNDS",
     "details": { "currency": "USDx", "requested": "50.000000", "available": "10.000000" },
     "requestId": "01a186de-eff5-7145-aec9-fef34adc48d9",
     "retryable": false
@@ -735,7 +815,7 @@ Every failure returns the same envelope:
 }
 ```
 
-**Branch on `code`, never on the status alone** — several distinct conditions
+**Branch on `errorCode`, never on the status alone** — several distinct conditions
 return 422. Every code below has a test that produces it, so this table is a
 guarantee rather than a claim.
 
@@ -766,7 +846,8 @@ guarantee rather than a claim.
 | `RATE_UNAVAILABLE` | 503 | **yes** | No tier of the FX chain could price this pair |
 | `INTERNAL_ERROR` | 500 | **yes** | Unexpected. Generic message; the real error and stack go to the log against the request id |
 
-A `5xx` response never carries detail. Prisma errors are mapped at the boundary
+A `5xx` response never carries detail — `requestMessage` is generic and `details`
+is empty. Prisma errors are mapped at the boundary
 and never reach a client — `P2002` leaks index names and a validation error
 leaks the schema's shape.
 
@@ -962,7 +1043,7 @@ another.
 
 | Command | |
 |---|---|
-| `yarn test` | unit + e2e, 226 tests |
+| `yarn test` | unit + e2e, 235 tests |
 | `yarn test:unit` | hermetic; no database, no network |
 | `yarn test:e2e` | full application over HTTP |
 | `yarn lint` / `yarn typecheck` | |

@@ -6,6 +6,7 @@ import { AccessTokenGuard } from './auth/access-token.guard';
 import { AuthModule } from './auth/auth.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
+import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { validateEnv } from './config/env.schema';
 import { FxModule } from './fx/fx.module';
@@ -48,6 +49,9 @@ import { WalletsModule } from './wallets/wallets.module';
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
+    // Registered globally, so a new controller is enveloped by default rather
+    // than by remembering to do it.
+    { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
     // Deny by default: every route needs a valid access token unless it is
     // explicitly marked @Public(). Forgetting a decorator makes an endpoint
     // unreachable rather than silently open.

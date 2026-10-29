@@ -1,12 +1,8 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Post } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiCreatedResponse,
-  ApiNoContentResponse,
-  ApiOperation,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope';
+import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 
 import type { AuthenticatedWallet } from '../common/request-context';
 import { AuthService } from './auth.service';
@@ -28,8 +24,9 @@ export class AuthController {
       'Identify the wallet by the email or phone it was created with. A failed login does not ' +
       'reveal whether the contact exists, so this endpoint cannot be used to enumerate wallets.',
   })
-  @ApiCreatedResponse({ type: TokenPairResponse })
-  @ApiUnauthorizedResponse({ description: 'INVALID_CREDENTIALS' })
+  @ApiEnvelope(TokenPairResponse, { status: 201 })
+  @ApiEnvelopeError(401, 'INVALID_CREDENTIALS')
+  @ResponseMessage('Signed in')
   async login(@Body() dto: LoginDto): Promise<TokenPairResponse> {
     return this.auth.login(dto);
   }
@@ -43,14 +40,17 @@ export class AuthController {
       'The presented refresh token is revoked as the new pair is issued, so a captured refresh ' +
       'token is usable at most once. Replaying one returns TOKEN_REVOKED.',
   })
-  @ApiCreatedResponse({ type: TokenPairResponse })
-  @ApiUnauthorizedResponse({ description: 'TOKEN_REVOKED, TOKEN_EXPIRED or TOKEN_WRONG_TYPE' })
+  @ApiEnvelope(TokenPairResponse, { status: 201 })
+  @ApiEnvelopeError(401, 'TOKEN_REVOKED, TOKEN_EXPIRED or TOKEN_WRONG_TYPE')
+  @ResponseMessage('Tokens rotated')
   async refresh(@Body() dto: RefreshDto): Promise<TokenPairResponse> {
     return this.auth.refresh(dto.refreshToken);
   }
 
   @Delete()
-  @HttpCode(HttpStatus.NO_CONTENT)
+  // 200 rather than 204: every response carries the envelope, and a 204 has no
+  // body to put it in.
+  @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Log out: revoke the presented access token, and a refresh token if supplied',
@@ -58,7 +58,8 @@ export class AuthController {
       'The access token is denylisted in Redis for its remaining lifetime, which is the only way ' +
       'a self-contained JWT can be invalidated before it expires.',
   })
-  @ApiNoContentResponse()
+  @ApiEnvelopeError(401, 'UNAUTHENTICATED or TOKEN_REVOKED')
+  @ResponseMessage('Signed out')
   async logout(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Body() dto: Partial<RefreshDto>,

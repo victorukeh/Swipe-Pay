@@ -5,7 +5,7 @@ import {
   uniquePhone,
   type Harness,
 } from './app-harness';
-import { balances, createWallet, deposit, errorCode, walletTotal } from './helpers';
+import { balances, createWallet, data, deposit, errorCode, walletTotal, wrapper } from './helpers';
 
 describe('wallets', () => {
   let h: Harness;
@@ -28,13 +28,13 @@ describe('wallets', () => {
         .send({ email, password: 'correct-horse-battery-staple' })
         .expect(201);
 
-      const body = res.body as {
+      const body = data<{
         id: string;
         email: string;
         phone: string | null;
         balances: Array<{ currency: string; amount: string }>;
         tokens: { accessToken: string; walletId: string };
-      };
+      }>(res);
 
       expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
       expect(body.email).toBe(email);
@@ -58,8 +58,8 @@ describe('wallets', () => {
         .send({ phone, password: 'correct-horse-battery-staple' })
         .expect(201);
 
-      expect((res.body as { phone: string }).phone).toBe(phone);
-      expect((res.body as { email: string | null }).email).toBeNull();
+      expect(data<{ phone: string }>(res).phone).toBe(phone);
+      expect(data<{ email: string | null }>(res).email).toBeNull();
     });
 
     it('holds a balance in every supported currency, starting at zero', async () => {
@@ -184,11 +184,10 @@ describe('wallets', () => {
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .expect(200);
 
-      const rows = (
-        res.body as Array<{
-          balances: Array<{ currency: string; amount: string; usdEquivalent: string }>;
-        }>
-      )[0]!.balances;
+      const rows =
+        data<
+          Array<{ balances: Array<{ currency: string; amount: string; usdEquivalent: string }> }>
+        >(res)[0]!.balances;
       const ngn = rows.find((r) => r.currency === 'cNGN');
 
       expect(ngn?.amount).toBe('3200.00');
@@ -203,9 +202,8 @@ describe('wallets', () => {
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .expect(200);
 
-      const body = (
-        res.body as Array<{ ratesSource: string; ratesAsOf: string; totalCurrency: string }>
-      )[0]!;
+      const body =
+        data<Array<{ ratesSource: string; ratesAsOf: string; totalCurrency: string }>>(res)[0]!;
       // The suite runs with the live provider unreachable, so the snapshot tier
       // serves and says so rather than pretending the rate is live.
       expect(body.ratesSource).toBe('stale');
@@ -221,9 +219,10 @@ describe('wallets', () => {
         .set('authorization', `Bearer ${wallet.accessToken}`)
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body as Array<{ id: string }>).toHaveLength(1);
-      expect((res.body as Array<{ id: string }>)[0]!.id).toBe(wallet.id);
+      const wallets = data<Array<{ id: string }>>(res);
+      expect(Array.isArray(wallets)).toBe(true);
+      expect(wallets).toHaveLength(1);
+      expect(wallets[0]!.id).toBe(wallet.id);
     });
 
     it('sets no-store and Vary on an authenticated response', async () => {
@@ -243,6 +242,79 @@ describe('wallets', () => {
     it('gives every response a correlation id', async () => {
       const res = await h.http().get('/v1/currencies').expect(200);
       expect(res.headers['x-request-id']).toMatch(/.+/);
+    });
+  });
+
+  /**
+   * The envelope is the API's outermost contract, so it is worth asserting
+   * directly rather than only through the helper that unwraps it.
+   */
+  describe('response envelope', () => {
+    it('wraps a successful response in exactly the four envelope keys', async () => {
+      const wallet = await createWallet(h, 'env');
+      const res = await h
+        .http()
+        .get('/v1/wallets')
+        .set('authorization', `Bearer ${wallet.accessToken}`)
+        .expect(200);
+
+      const body = wrapper(res);
+      expect(Object.keys(body).sort()).toEqual([
+        'requestCode',
+        'requestData',
+        'requestMessage',
+        'requestSuccessful',
+      ]);
+      expect(body.requestSuccessful).toBe(true);
+      // The status is repeated in the body, so a client holding only the
+      // payload can still tell what happened.
+      expect(body.requestCode).toBe(200);
+      expect(body.requestMessage).toBe('Wallets retrieved');
+      expect(Array.isArray(body.requestData)).toBe(true);
+    });
+
+    it('reports 201 in the body for a created resource', async () => {
+      const res = await h
+        .http()
+        .post('/v1/wallets')
+        .send({ email: uniqueEmail('env201'), password: 'correct-horse-battery-staple' })
+        .expect(201);
+
+      const body = wrapper(res);
+      expect(body.requestSuccessful).toBe(true);
+      expect(body.requestCode).toBe(201);
+      expect(body.requestMessage).toBe('Wallet created');
+    });
+
+    it('wraps public endpoints too', async () => {
+      for (const [path, message] of [
+        ['/v1/currencies', 'Currencies retrieved'],
+        ['/v1/rates', 'Rates retrieved'],
+        ['/v1/health', 'Service health'],
+      ] as const) {
+        const body = wrapper(await h.http().get(path).expect(200));
+        expect(body.requestSuccessful).toBe(true);
+        expect(body.requestCode).toBe(200);
+        expect(body.requestMessage).toBe(message);
+        expect(body.requestData).not.toBeUndefined();
+      }
+    });
+
+    it('envelopes a logout, which therefore returns 200 rather than 204', async () => {
+      const wallet = await createWallet(h, 'env204');
+      const res = await h
+        .http()
+        .delete('/v1/auth/tokens')
+        .set('authorization', `Bearer ${wallet.accessToken}`)
+        .send({})
+        .expect(200);
+
+      // A 204 has no body to put the envelope in, so the route returns 200 with
+      // a null payload instead of breaking the one-shape rule.
+      const body = wrapper(res);
+      expect(body.requestSuccessful).toBe(true);
+      expect(body.requestMessage).toBe('Signed out');
+      expect(body.requestData).toBeNull();
     });
   });
 

@@ -1,29 +1,19 @@
 import { Controller, Get, HttpCode, HttpStatus, Res } from '@nestjs/common';
-import {
-  ApiOkResponse,
-  ApiOperation,
-  ApiServiceUnavailableResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
 import { Public } from '../auth/public.decorator';
+import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope';
+import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 import { isDegradedSource } from '../fx/fx.degraded';
 import { FxService } from '../fx/fx.service';
 import type { RateSourceName } from '../fx/fx.types';
 import { CurrencyRegistry } from '../money/currency-registry.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { HealthResponseDto } from './dto/health.response';
 
-interface HealthResponse {
-  status: 'ok' | 'degraded' | 'down';
-  checks: {
-    database: boolean;
-    redis: boolean;
-    currencies: number;
-    fx: { reachable: boolean; source: string | null; asOf: string | null; degraded: boolean };
-  };
-}
+type HealthResponse = HealthResponseDto;
 
 /**
  * Liveness and readiness in one endpoint.
@@ -58,8 +48,9 @@ export class HealthController {
       'still works in that state. `down`, with a 503, only when PostgreSQL is unreachable, since ' +
       'no money can move then.',
   })
-  @ApiOkResponse({ description: 'Service is ok or degraded.' })
-  @ApiServiceUnavailableResponse({ description: 'PostgreSQL is unreachable.' })
+  @ApiEnvelope(HealthResponseDto, { description: 'Service is ok or degraded.' })
+  @ApiEnvelopeError(503, 'PostgreSQL is unreachable.')
+  @ResponseMessage('Service health')
   async check(@Res({ passthrough: true }) res: Response): Promise<HealthResponse> {
     const [database, redis] = await Promise.all([this.prisma.isHealthy(), this.redis.isHealthy()]);
 

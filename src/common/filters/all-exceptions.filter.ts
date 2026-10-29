@@ -9,7 +9,7 @@ import {
 import type { Response } from 'express';
 
 import { toAppError } from '../errors/error-mapper';
-import type { ErrorEnvelope } from '../errors/error.types';
+import { envelope, type ErrorPayload, type ResponseEnvelope } from '../http/response-envelope';
 import { type BorderlessRequest } from '../request-context';
 
 const SERVER_ERROR: number = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -25,6 +25,10 @@ const SERVER_ERROR: number = HttpStatus.INTERNAL_SERVER_ERROR;
  *  - `retryable` is published, so a client knows whether a retry is pointless
  *    (insufficient funds) or sensible (rate provider down). It mirrors exactly
  *    the signal that decides whether an Idempotency-Key is consumed or released.
+ *
+ * It emits the same envelope as the success path, through the same `envelope()`
+ * helper, because a client should not have to learn two response shapes -- and
+ * because two independent implementations of one shape drift.
  */
 @Injectable()
 @Catch()
@@ -50,16 +54,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.warn(`${context} -> ${appError.status} ${appError.code}: ${appError.message}`);
     }
 
-    const envelope: ErrorEnvelope = {
-      error: {
-        code: appError.code,
-        message: isServerError ? 'An unexpected error occurred' : appError.message,
-        details: isServerError ? {} : appError.details,
-        requestId,
-        retryable: appError.retryable,
-      },
+    const message = isServerError ? 'An unexpected error occurred' : appError.message;
+    const payload: ErrorPayload = {
+      errorCode: appError.code,
+      details: isServerError ? {} : appError.details,
+      requestId,
+      retryable: appError.retryable,
     };
 
-    response.status(appError.status).json(envelope);
+    const body: ResponseEnvelope<ErrorPayload> = envelope({
+      status: appError.status,
+      message,
+      data: payload,
+    });
+
+    response.status(appError.status).json(body);
   }
 }

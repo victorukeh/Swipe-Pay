@@ -1,5 +1,5 @@
 import { createHarness, seedTestRates, type Harness } from './app-harness';
-import { createWallet, deposit, errorCode, swap, transfer, type Wallet } from './helpers';
+import { createWallet, data, deposit, errorCode, swap, transfer, type Wallet } from './helpers';
 
 interface HistoryPage {
   items: Array<{
@@ -23,7 +23,7 @@ describe('history', () => {
   let carol: Wallet;
   let transferId: string;
 
-  const page = (res: { body: unknown }): HistoryPage => res.body as HistoryPage;
+  const page = (res: { body: unknown }): HistoryPage => data<HistoryPage>(res);
 
   beforeAll(async () => {
     h = await createHarness();
@@ -186,7 +186,7 @@ describe('history', () => {
         .get(`/v1/transactions/${transferId}`)
         .set('authorization', `Bearer ${alice.accessToken}`)
         .expect(200);
-      expect((res.body as { direction: string }).direction).toBe('DEBIT');
+      expect(data<{ direction: string }>(res).direction).toBe('DEBIT');
     });
 
     it('is readable by the receiver', async () => {
@@ -195,7 +195,7 @@ describe('history', () => {
         .get(`/v1/transactions/${transferId}`)
         .set('authorization', `Bearer ${bob.accessToken}`)
         .expect(200);
-      expect((res.body as { direction: string }).direction).toBe('CREDIT');
+      expect(data<{ direction: string }>(res).direction).toBe('CREDIT');
     });
 
     it('is not readable by anyone else', async () => {
@@ -251,13 +251,13 @@ describe('history', () => {
       );
       expect(all.items).toHaveLength(2);
 
-      const failed = (
+      const failed = data<{ items: Array<{ errorCode: string; requestId: string }> }>(
         await h
           .http()
           .get('/v1/attempts?outcome=FAILED')
           .set('authorization', `Bearer ${wallet.accessToken}`)
-          .expect(200)
-      ).body as { items: Array<{ errorCode: string; requestId: string }> };
+          .expect(200),
+      );
 
       expect(failed.items).toHaveLength(1);
       expect(failed.items[0]?.errorCode).toBe('INSUFFICIENT_FUNDS');

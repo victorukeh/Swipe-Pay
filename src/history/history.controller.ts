@@ -1,12 +1,8 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiForbiddenResponse,
-  ApiNotFoundResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope';
+import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 
 import { CurrentWallet } from '../auth/current-wallet.decorator';
 import type { AuthenticatedWallet } from '../common/request-context';
@@ -33,7 +29,8 @@ export class HistoryController {
       "as sent in the sender's statement and received in the receiver's, and a cross-currency " +
       'swap appears as two rows -- a debit and a credit -- in the same statement.',
   })
-  @ApiOkResponse({ type: TransactionPageResponse })
+  @ApiEnvelope(TransactionPageResponse)
+  @ResponseMessage('Transactions retrieved')
   async list(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Query() query: TransactionHistoryQuery,
@@ -48,9 +45,10 @@ export class HistoryController {
       'Visible to either party, so a receiver can read a transfer sent to them. A caller who is ' +
       'party to neither gets FORBIDDEN_WALLET_ACCESS.',
   })
-  @ApiOkResponse({ type: HistoryEntryResponse })
-  @ApiNotFoundResponse({ description: 'TRANSACTION_NOT_FOUND' })
-  @ApiForbiddenResponse({ description: 'FORBIDDEN_WALLET_ACCESS' })
+  @ApiEnvelope(HistoryEntryResponse)
+  @ApiEnvelopeError(404, 'TRANSACTION_NOT_FOUND')
+  @ApiEnvelopeError(403, 'FORBIDDEN_WALLET_ACCESS')
+  @ResponseMessage('Transaction retrieved')
   async get(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Param('id', ParseUUIDPipe) id: string,
@@ -66,7 +64,8 @@ export class HistoryController {
       'only ever hold committed money, which is what keeps the per-currency ledger sum provable, ' +
       'so failures are audited here instead. Each row carries the requestId the client saw.',
   })
-  @ApiOkResponse({ type: AttemptPageResponse })
+  @ApiEnvelope(AttemptPageResponse)
+  @ResponseMessage('Attempts retrieved')
   async attempts(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Query() query: AttemptHistoryQuery,

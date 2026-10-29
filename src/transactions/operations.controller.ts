@@ -1,14 +1,8 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
-import {
-  ApiBadRequestResponse,
-  ApiBearerAuth,
-  ApiConflictResponse,
-  ApiCreatedResponse,
-  ApiOperation,
-  ApiServiceUnavailableResponse,
-  ApiTags,
-  ApiUnprocessableEntityResponse,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope';
+import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 import type { Response } from 'express';
 
 import { CurrentWallet } from '../auth/current-wallet.decorator';
@@ -44,14 +38,14 @@ export class OperationsController {
       'internal clearing account, so the movement is balanced double-entry rather than money ' +
       'appearing from nowhere.',
   })
-  @ApiCreatedResponse({ type: TransactionResponse })
-  @ApiBadRequestResponse({
-    description: 'IDEMPOTENCY_KEY_REQUIRED, VALIDATION_FAILED or INVALID_AMOUNT',
-  })
-  @ApiConflictResponse({ description: 'IDEMPOTENCY_KEY_IN_FLIGHT' })
-  @ApiUnprocessableEntityResponse({
-    description: 'UNSUPPORTED_CURRENCY, AMOUNT_PRECISION_EXCEEDED or IDEMPOTENCY_KEY_REUSED',
-  })
+  @ApiEnvelope(TransactionResponse, { status: 201 })
+  @ApiEnvelopeError(400, 'IDEMPOTENCY_KEY_REQUIRED, VALIDATION_FAILED or INVALID_AMOUNT')
+  @ApiEnvelopeError(409, 'IDEMPOTENCY_KEY_IN_FLIGHT')
+  @ApiEnvelopeError(
+    422,
+    'UNSUPPORTED_CURRENCY, AMOUNT_PRECISION_EXCEEDED or IDEMPOTENCY_KEY_REUSED',
+  )
+  @ResponseMessage('Deposit completed')
   async deposit(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Body() dto: DepositDto,
@@ -81,14 +75,15 @@ export class OperationsController {
       "currency's precision, so the system can never credit more value than it debited. A swap " +
       'that would round to zero is rejected rather than executed.',
   })
-  @ApiCreatedResponse({ type: TransactionResponse })
-  @ApiConflictResponse({ description: 'IDEMPOTENCY_KEY_IN_FLIGHT' })
-  @ApiUnprocessableEntityResponse({
-    description:
-      'INSUFFICIENT_FUNDS, SAME_CURRENCY_SWAP, AMOUNT_TOO_SMALL_TO_CONVERT, ' +
+  @ApiEnvelope(TransactionResponse, { status: 201 })
+  @ApiEnvelopeError(409, 'IDEMPOTENCY_KEY_IN_FLIGHT')
+  @ApiEnvelopeError(
+    422,
+    'INSUFFICIENT_FUNDS, SAME_CURRENCY_SWAP, AMOUNT_TOO_SMALL_TO_CONVERT, ' +
       'UNSUPPORTED_CURRENCY or AMOUNT_PRECISION_EXCEEDED',
-  })
-  @ApiServiceUnavailableResponse({ description: 'RATE_UNAVAILABLE' })
+  )
+  @ApiEnvelopeError(503, 'RATE_UNAVAILABLE')
+  @ResponseMessage('Swap completed')
   async swap(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Body() dto: SwapDto,
@@ -118,13 +113,14 @@ export class OperationsController {
       'converted at the current rate, and the record keeps sender, receiver, both amounts, both ' +
       'currencies, the rate applied and a timestamp.',
   })
-  @ApiCreatedResponse({ type: TransactionResponse })
-  @ApiConflictResponse({ description: 'IDEMPOTENCY_KEY_IN_FLIGHT' })
-  @ApiUnprocessableEntityResponse({
-    description:
-      'INSUFFICIENT_FUNDS, SELF_TRANSFER, AMOUNT_TOO_SMALL_TO_CONVERT or UNSUPPORTED_CURRENCY',
-  })
-  @ApiServiceUnavailableResponse({ description: 'RATE_UNAVAILABLE' })
+  @ApiEnvelope(TransactionResponse, { status: 201 })
+  @ApiEnvelopeError(409, 'IDEMPOTENCY_KEY_IN_FLIGHT')
+  @ApiEnvelopeError(
+    422,
+    'INSUFFICIENT_FUNDS, SELF_TRANSFER, AMOUNT_TOO_SMALL_TO_CONVERT or UNSUPPORTED_CURRENCY',
+  )
+  @ApiEnvelopeError(503, 'RATE_UNAVAILABLE')
+  @ResponseMessage('Transfer completed')
   async transfer(
     @CurrentWallet() wallet: AuthenticatedWallet,
     @Body() dto: TransferDto,

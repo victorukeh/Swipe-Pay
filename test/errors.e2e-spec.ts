@@ -1,6 +1,15 @@
 import { hashRequest } from '../src/common/idempotency/request-hash';
 import { createHarness, seedTestRates, uniqueKey, type Harness } from './app-harness';
-import { createWallet, deposit, errorCode, errorDetails, type Wallet } from './helpers';
+import {
+  createWallet,
+  data,
+  deposit,
+  errorCode,
+  errorDetails,
+  errorRetryable,
+  wrapper,
+  type Wallet,
+} from './helpers';
 
 /**
  * One case per documented error code.
@@ -37,23 +46,31 @@ describe('error contract', () => {
       .send({ currency: 'cFAKE', amount: '1.00' })
       .expect(422);
 
-    const body = res.body as {
-      error: {
-        code: string;
-        message: string;
-        details: Record<string, unknown>;
-        requestId: string;
-        retryable: boolean;
-      };
-    };
+    const body = wrapper(res);
 
-    expect(Object.keys(body)).toEqual(['error']);
-    expect(body.error.code).toBe('UNSUPPORTED_CURRENCY');
-    expect(typeof body.error.message).toBe('string');
-    expect(typeof body.error.details).toBe('object');
+    // Exactly the four envelope keys, in every response the API gives.
+    expect(Object.keys(body).sort()).toEqual([
+      'requestCode',
+      'requestData',
+      'requestMessage',
+      'requestSuccessful',
+    ]);
+    expect(body.requestSuccessful).toBe(false);
+    // requestCode is the HTTP status; the specific condition is errorCode.
+    expect(body.requestCode).toBe(422);
+    expect(body.requestMessage).toBe('Unsupported currency');
+
+    const payload = body.requestData as {
+      errorCode: string;
+      details: Record<string, unknown>;
+      requestId: string;
+      retryable: boolean;
+    };
+    expect(payload.errorCode).toBe('UNSUPPORTED_CURRENCY');
+    expect(typeof payload.details).toBe('object');
     // The correlation id is echoed in the header too, so a client can quote it.
-    expect(body.error.requestId).toBe(res.headers['x-request-id']);
-    expect(body.error.retryable).toBe(false);
+    expect(payload.requestId).toBe(res.headers['x-request-id']);
+    expect(payload.retryable).toBe(false);
   });
 
   describe('400', () => {
@@ -185,7 +202,7 @@ describe('error contract', () => {
       expect(errorCode(res.body)).toBe('IDEMPOTENCY_KEY_IN_FLIGHT');
       // Retryable: the original may still land, so the client should come back
       // for the replayed response rather than treat this as final.
-      expect((res.body as { error: { retryable: boolean } }).error.retryable).toBe(true);
+      expect(errorRetryable(res.body)).toBe(true);
 
       // And no second credit happened while it was blocked.
       const credited = await h.prisma.transaction.count({
@@ -318,7 +335,7 @@ describe('error contract', () => {
 
       const res = await h
         .http()
-        .get(`/v1/transactions/${(sent.body as { id: string }).id}`)
+        .get(`/v1/transactions/${data<{ id: string }>(sent).id}`)
         .set('authorization', `Bearer ${third.accessToken}`)
         .expect(403);
       expect(errorCode(res.body)).toBe('FORBIDDEN_WALLET_ACCESS');
@@ -359,7 +376,7 @@ describe('error contract', () => {
               password: 'correct-horse-battery-staple',
             })
             .expect(201);
-          return res.body as { id: string; tokens: { accessToken: string } };
+          return data<{ id: string; tokens: { accessToken: string } }>(res);
         })();
 
         await fresh
@@ -381,7 +398,7 @@ describe('error contract', () => {
         expect(errorCode(res.body)).toBe('RATE_UNAVAILABLE');
         // Transient: the key is released so a retry can work once the feed
         // covers the pair.
-        expect((res.body as { error: { retryable: boolean } }).error.retryable).toBe(true);
+        expect(errorRetryable(res.body)).toBe(true);
 
         // A deposit in the unquotable currency still worked, and pairs that are
         // quotable are unaffected.

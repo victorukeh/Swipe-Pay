@@ -1,6 +1,33 @@
 import type { Harness } from './app-harness';
 import { uniqueEmail, uniqueKey } from './app-harness';
 
+/**
+ * Unwraps the standard response envelope.
+ *
+ * Every response from the API is
+ * `{ requestSuccessful, requestCode, requestMessage, requestData }`, so the
+ * suite reaches through it here rather than in every assertion.
+ */
+export function data<T>(res: { body: unknown }): T {
+  const body = res.body as { requestData?: unknown };
+  return body.requestData as T;
+}
+
+/** The whole envelope, for the tests that assert on its shape. */
+export function wrapper(res: { body: unknown }): {
+  requestSuccessful: boolean;
+  requestCode: number;
+  requestMessage: string;
+  requestData: unknown;
+} {
+  return res.body as {
+    requestSuccessful: boolean;
+    requestCode: number;
+    requestMessage: string;
+    requestData: unknown;
+  };
+}
+
 export interface Wallet {
   id: string;
   accessToken: string;
@@ -17,10 +44,7 @@ export async function createWallet(h: Harness, prefix = 'w'): Promise<Wallet> {
     .send({ email, password: 'correct-horse-battery-staple' })
     .expect(201);
 
-  const body = res.body as {
-    id: string;
-    tokens: { accessToken: string; refreshToken: string };
-  };
+  const body = data<{ id: string; tokens: { accessToken: string; refreshToken: string } }>(res);
   return {
     id: body.id,
     accessToken: body.tokens.accessToken,
@@ -42,7 +66,7 @@ export async function deposit(
     .set('idempotency-key', uniqueKey('dep'))
     .send({ currency, amount })
     .expect(201);
-  return res.body as Record<string, unknown>;
+  return data<Record<string, unknown>>(res);
 }
 
 export async function swap(
@@ -59,7 +83,7 @@ export async function swap(
     .set('idempotency-key', uniqueKey('swap'))
     .send({ fromCurrency, toCurrency, amount })
     .expect(201);
-  return res.body as Record<string, unknown>;
+  return data<Record<string, unknown>>(res);
 }
 
 export async function transfer(
@@ -77,7 +101,7 @@ export async function transfer(
     .set('idempotency-key', uniqueKey('xfer'))
     .send({ toWalletId, currency, amount, ...(toCurrency === undefined ? {} : { toCurrency }) })
     .expect(201);
-  return res.body as Record<string, unknown>;
+  return data<Record<string, unknown>>(res);
 }
 
 export interface BalanceMap {
@@ -91,7 +115,7 @@ export async function balances(h: Harness, wallet: Wallet): Promise<BalanceMap> 
     .set('authorization', `Bearer ${wallet.accessToken}`)
     .expect(200);
 
-  const body = res.body as Array<{ balances: Array<{ currency: string; amount: string }> }>;
+  const body = data<Array<{ balances: Array<{ currency: string; amount: string }> }>>(res);
   const out: BalanceMap = {};
   for (const entry of body[0]?.balances ?? []) out[entry.currency] = entry.amount;
   return out;
@@ -103,14 +127,26 @@ export async function walletTotal(h: Harness, wallet: Wallet): Promise<string> {
     .get('/v1/wallets')
     .set('authorization', `Bearer ${wallet.accessToken}`)
     .expect(200);
-  return (res.body as Array<{ totalUsdEquivalent: string }>)[0]?.totalUsdEquivalent ?? '';
+  return data<Array<{ totalUsdEquivalent: string }>>(res)[0]?.totalUsdEquivalent ?? '';
 }
 
-/** The error code from a failed response, for concise assertions. */
+/**
+ * The error code from a failed response.
+ *
+ * It lives in `requestData.errorCode` rather than at the top level, because
+ * `requestCode` is the HTTP status and the two answer different questions:
+ * several distinct conditions return 422.
+ */
 export function errorCode(body: unknown): string {
-  return (body as { error?: { code?: string } }).error?.code ?? '';
+  return (body as { requestData?: { errorCode?: string } }).requestData?.errorCode ?? '';
 }
 
 export function errorDetails(body: unknown): Record<string, unknown> {
-  return (body as { error?: { details?: Record<string, unknown> } }).error?.details ?? {};
+  return (
+    (body as { requestData?: { details?: Record<string, unknown> } }).requestData?.details ?? {}
+  );
+}
+
+export function errorRetryable(body: unknown): boolean {
+  return (body as { requestData?: { retryable?: boolean } }).requestData?.retryable ?? false;
 }
