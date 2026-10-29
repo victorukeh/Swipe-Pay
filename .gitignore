@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+# Yarn (Zero-Install disabled; the release itself is committed on purpose)
+.yarn/*
+!.yarn/releases
+.pnp.*
+
+.DS_Store
+*.log
+npm-debug.log*
+yarn-error.log*
