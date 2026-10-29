@@ -24,8 +24,18 @@ const MONEY_ERROR_CODE: Record<MoneyError['code'], ErrorCodeValue> = {
   INVALID_RATE: ErrorCode.RATE_UNAVAILABLE,
 };
 
-/** Unique-constraint names, mapped to the error the client should actually see. */
+/**
+ * Unique-constraint violations, mapped to the error the client should see.
+ *
+ * Keyed on both the constraint name and the bare column name, because Prisma
+ * reports `meta.target` as one or the other depending on the adapter and
+ * version -- PostgreSQL gives `['email']` here, while the constraint name shows
+ * up in other configurations. Matching both means the client gets "a wallet
+ * already exists for that email" rather than a vague fallback.
+ */
 const UNIQUE_CONSTRAINT_ERRORS: Record<string, () => AppError> = {
+  email: () => AppError.walletContactTaken('email'),
+  phone: () => AppError.walletContactTaken('phone'),
   wallets_email_key: () => AppError.walletContactTaken('email'),
   wallets_phone_key: () => AppError.walletContactTaken('phone'),
 };

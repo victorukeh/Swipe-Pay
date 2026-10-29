@@ -12,6 +12,7 @@ import { FxModule } from './fx/fx.module';
 import { MoneyModule } from './money/money.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { WalletsModule } from './wallets/wallets.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { RedisModule } from './redis/redis.module';
     MoneyModule,
     AuthModule,
     FxModule,
+    WalletsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

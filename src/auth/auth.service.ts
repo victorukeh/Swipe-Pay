@@ -66,7 +66,6 @@ export class AuthService {
     return contact;
   }
 
-  /** Hashes a password for a new wallet. Separated so WalletsService stays thin. */
   async hashPassword(password: string): Promise<{ hash: string; salt: string }> {
     return this.passwords.hash(password);
   }
@@ -83,10 +82,6 @@ export class AuthService {
       include: { credential: true },
     });
 
-    // One error for "no such wallet" and for "wrong password", so the endpoint
-    // cannot be used to enumerate which emails are registered. The password is
-    // still verified against a dummy hash when the wallet is missing, so the
-    // two paths take comparable time.
     if (!wallet?.credential) {
       await this.passwords.verify(input.password, 'dummy-salt', '00'.repeat(64));
       throw AppError.invalidCredentials();

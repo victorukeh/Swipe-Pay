@@ -40,16 +40,42 @@ describe('toAppError', () => {
     expect(rate.retryable).toBe(true);
   });
 
-  it('turns a unique-constraint violation into the contact-taken error', () => {
+  /**
+   * Prisma reports `meta.target` as bare column names on PostgreSQL and as the
+   * constraint name elsewhere, so both spellings have to resolve to the same
+   * client-facing error.
+   */
+  it.each([
+    ['postgres column names', ['email'], 'email'],
+    ['a constraint name', ['wallets_email_key'], 'email'],
+    ['a bare string target', 'wallets_phone_key', 'phone'],
+    ['a phone column', ['phone'], 'phone'],
+  ])('turns a unique-constraint violation on %s into contact-taken', (_label, target, field) => {
     const error = new Prisma.PrismaClientKnownRequestError('dup', {
       code: 'P2002',
       clientVersion: 'test',
-      meta: { target: ['wallets_email_key'] },
+      meta: { target },
     });
     const mapped = toAppError(error);
+
     expect(mapped.code).toBe(ErrorCode.WALLET_CONTACT_TAKEN);
     expect(mapped.status).toBe(HttpStatus.CONFLICT);
-    expect(mapped.details).toEqual({ field: 'email' });
+    expect(mapped.details).toEqual({ field });
+    expect(mapped.message).toContain(field);
+  });
+
+  it('still reports a conflict for an unrecognised unique constraint', () => {
+    const error = new Prisma.PrismaClientKnownRequestError('dup', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['some_other_key'] },
+    });
+    const mapped = toAppError(error);
+
+    expect(mapped.code).toBe(ErrorCode.WALLET_CONTACT_TAKEN);
+    expect(mapped.status).toBe(HttpStatus.CONFLICT);
+    // No index name leaks to the client.
+    expect(mapped.message).not.toContain('some_other_key');
   });
 
   it('never leaks an unrecognised Prisma error to the client', () => {
