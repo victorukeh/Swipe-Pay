@@ -1,0 +1,1403 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/v1/auth/tokens": {
+      "post": {
+        "description": "Identify the wallet by the email or phone it was created with. A failed login does not reveal whether the contact exists, so this endpoint cannot be used to enumerate wallets.",
+        "operationId": "login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS"
+          }
+        },
+        "summary": "Log in: exchange credentials for a token pair",
+        "tags": [
+          "auth"
+        ]
+      },
+      "delete": {
+        "description": "The access token is denylisted in Redis for its remaining lifetime, which is the only way a self-contained JWT can be invalidated before it expires.",
+        "operationId": "logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Log out: revoke the presented access token, and a refresh token if supplied",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/tokens/refresh": {
+      "post": {
+        "description": "The presented refresh token is revoked as the new pair is issued, so a captured refresh token is usable at most once. Replaying one returns TOKEN_REVOKED.",
+        "operationId": "refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "TOKEN_REVOKED, TOKEN_EXPIRED or TOKEN_WRONG_TYPE"
+          }
+        },
+        "summary": "Rotate a refresh token for a new pair",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/rates": {
+      "get": {
+        "description": "Returns every ordered pair, the time the rates were last refreshed, and which tier of the provider chain served them. `degraded: true` means the live provider was unavailable and a cached, stale or static rate was used instead.",
+        "operationId": "rates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RATE_UNAVAILABLE — every tier of the rate provider chain failed."
+          }
+        },
+        "summary": "Current conversion rates between all supported stablecoins",
+        "tags": [
+          "rates"
+        ]
+      }
+    },
+    "/v1/currencies": {
+      "get": {
+        "description": "Note cXAF has 0 decimals: the Central African CFA franc has no subunit in circulation, so an amount like \"1500.50\" is rejected rather than rounded.",
+        "operationId": "listCurrencies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CurrencyResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Supported stablecoins, their fiat pegs and their precision",
+        "tags": [
+          "rates"
+        ]
+      }
+    },
+    "/v1/wallets": {
+      "post": {
+        "description": "Identified by an email address or a mobile number -- exactly one is required, and neither may already belong to another wallet. The wallet holds a balance in every supported currency. Returns a token pair, so creating and first using a wallet is one round trip.",
+        "operationId": "create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWalletDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateWalletResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "WALLET_CONTACT_TAKEN -- that email or phone already has a wallet."
+          }
+        },
+        "summary": "Create a wallet",
+        "tags": [
+          "wallets"
+        ]
+      },
+      "get": {
+        "description": "Resolved from the access token: there is no wallet id in the path, so no caller can read another wallet. An admin view of every wallet would live at GET /wallets/all.",
+        "operationId": "list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's wallets",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/v1/deposits": {
+      "post": {
+        "description": "Credits the wallet immediately and writes a transaction record. The counter-leg debits an internal clearing account, so the movement is balanced double-entry rather than money appearing from nowhere.",
+        "operationId": "deposit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A client-generated unique string, typically a UUID. Retrying with the same key returns the original response instead of moving money twice. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_REUSED.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "7f9a2c54-1e3b-4d7a-9f10-2b5c8e4a6d31"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "IDEMPOTENCY_KEY_REQUIRED, VALIDATION_FAILED or INVALID_AMOUNT"
+          },
+          "409": {
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+          },
+          "422": {
+            "description": "UNSUPPORTED_CURRENCY, AMOUNT_PRECISION_EXCEEDED or IDEMPOTENCY_KEY_REUSED"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Deposit funds (simulated)",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/v1/swaps": {
+      "post": {
+        "description": "Converts at the current rate. The amount credited is floored to the destination currency's precision, so the system can never credit more value than it debited. A swap that would round to zero is rejected rather than executed.",
+        "operationId": "swap",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A client-generated unique string, typically a UUID. Retrying with the same key returns the original response instead of moving money twice. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_REUSED.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "7f9a2c54-1e3b-4d7a-9f10-2b5c8e4a6d31"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwapDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+          },
+          "422": {
+            "description": "INSUFFICIENT_FUNDS, SAME_CURRENCY_SWAP, AMOUNT_TOO_SMALL_TO_CONVERT, UNSUPPORTED_CURRENCY or AMOUNT_PRECISION_EXCEEDED"
+          },
+          "503": {
+            "description": "RATE_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Swap one stablecoin for another inside the wallet",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/v1/transfers": {
+      "post": {
+        "description": "The sender is the token holder. When `toCurrency` differs from `currency` the amount is converted at the current rate, and the record keeps sender, receiver, both amounts, both currencies, the rate applied and a timestamp.",
+        "operationId": "transfer",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A client-generated unique string, typically a UUID. Retrying with the same key returns the original response instead of moving money twice. Reusing a key with a different body is rejected with IDEMPOTENCY_KEY_REUSED.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "7f9a2c54-1e3b-4d7a-9f10-2b5c8e4a6d31"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "IDEMPOTENCY_KEY_IN_FLIGHT"
+          },
+          "422": {
+            "description": "INSUFFICIENT_FUNDS, SELF_TRANSFER, AMOUNT_TOO_SMALL_TO_CONVERT or UNSUPPORTED_CURRENCY"
+          },
+          "503": {
+            "description": "RATE_UNAVAILABLE"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send funds to another wallet, in the same or a different currency",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/v1/transactions": {
+      "get": {
+        "description": "Deposits, swaps, and transfers both sent and received, with cursor pagination and filtering by type, currency and direction. Built from the ledger, so one transfer appears as sent in the sender's statement and received in the receiver's, and a cross-currency swap appears as two rows -- a debit and a credit -- in the same statement.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "Only movements of this kind.",
+            "schema": {
+              "example": "TRANSFER",
+              "type": "string",
+              "enum": [
+                "DEPOSIT",
+                "SWAP",
+                "TRANSFER"
+              ]
+            }
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "in": "query",
+            "description": "Only movements that touched this currency for the caller. A cNGN to USDx swap matches both `cNGN` and `USDx`, because the wallet has a ledger entry in each.",
+            "schema": {
+              "example": "USDx",
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "description": "DEBIT for money that left the wallet, CREDIT for money that arrived.",
+            "schema": {
+              "example": "DEBIT",
+              "type": "string",
+              "enum": [
+                "DEBIT",
+                "CREDIT"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 1-100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque cursor from the previous page's `nextCursor`. Cursor paging rather than an offset because new movements arrive at the top of this list constantly: with OFFSET, a deposit landing between two page requests silently shifts every later row and the client both misses and repeats entries.",
+            "schema": {
+              "example": "MDFhMTg2ZTEtM2MyMS03YTBlLTlmMjItNmIxZDJlNGE4Yzkw",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's transactions, newest first",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/transactions/{id}": {
+      "get": {
+        "description": "Visible to either party, so a receiver can read a transfer sent to them. A caller who is party to neither gets FORBIDDEN_WALLET_ACCESS.",
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryEntryResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN_WALLET_ACCESS"
+          },
+          "404": {
+            "description": "TRANSACTION_NOT_FOUND"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fetch a single transaction by id",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/attempts": {
+      "get": {
+        "description": "Kept separate from /transactions because the two carry different guarantees: transactions only ever hold committed money, which is what keeps the per-currency ledger sum provable, so failures are audited here instead. Each row carries the requestId the client saw.",
+        "operationId": "attempts",
+        "parameters": [
+          {
+            "name": "outcome",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "FAILED",
+              "type": "string",
+              "enum": [
+                "SUCCEEDED",
+                "FAILED"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "SWAP",
+              "type": "string",
+              "enum": [
+                "DEPOSIT",
+                "SWAP",
+                "TRANSFER"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The attempt log, including attempts that moved no money",
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "`ok` when everything is reachable -- including when rates are being served from the warm cache, which is the normal mode. `degraded` when Redis is down or the FX provider could not be reached and rates have fallen back to a snapshot or the static table; the API still works in that state. `down`, with a 503, only when PostgreSQL is unreachable, since no money can move then.",
+        "operationId": "check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Service is ok or degraded."
+          },
+          "503": {
+            "description": "PostgreSQL is unreachable."
+          }
+        },
+        "summary": "Service health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Operation Borderless",
+    "description": "A cross-border stablecoin payment sandbox: multi-currency wallets, simulated deposits,\ncross-currency swaps, wallet-to-wallet transfers and transaction history.\n\n### Money is never a JSON number\nEvery amount crosses this boundary as a **decimal string**. `JSON.parse('{\"amount\":0.1}')`\nalready holds an IEEE-754 double before any server code runs, so a number here would be\ncorrupted in transit. Internally amounts are integer counts of a currency’s minor units.\n\n### Precision is per currency\nAn amount with more decimal places than its currency admits is **rejected, not rounded**.\n`cXAF` has 0 decimals — the Central African CFA franc has no subunit in circulation — so\n`\"100.50\"` is not a representable amount. `GET /currencies` publishes the precision of each.\n\n### Conversions floor\nA converted amount is floored to the destination currency’s precision, so the system can\nnever credit more value than it debited. A conversion that would round to zero is rejected.\n\n### Retries are safe\nThe three money-moving endpoints require an `Idempotency-Key`. Retrying with the same key\nreturns the original response rather than moving money twice; reusing a key with a\ndifferent body is rejected. Responses carry `Idempotency-Replayed`.\n\n### Errors\nEvery failure returns the same envelope. Branch on `error.code`, never on the status alone —\nseveral distinct conditions return 422. `error.retryable` says whether retrying the\nidentical request could succeed.\n\n```json\n{\n  \"error\": {\n    \"code\": \"INSUFFICIENT_FUNDS\",\n    \"message\": \"Insufficient funds\",\n    \"details\": { \"currency\": \"USDx\", \"requested\": \"50.000000\", \"available\": \"10.000000\" },\n    \"requestId\": \"01a186de-eff5-7145-aec9-fef34adc48d9\",\n    \"retryable\": false\n  }\n}\n```\n\n### Getting started\n1. `POST /v1/wallets` — creates a wallet and returns a token pair.\n2. Paste the `accessToken` into **Authorize** above.\n3. `POST /v1/deposits`, then `/v1/swaps` or `/v1/transfers`.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "wallets",
+      "description": "Create a wallet; read balances and the USD total"
+    },
+    {
+      "name": "operations",
+      "description": "Deposits, swaps and transfers"
+    },
+    {
+      "name": "history",
+      "description": "Transactions, a single transaction, and the attempt log"
+    },
+    {
+      "name": "rates",
+      "description": "Conversion rates and supported currencies"
+    },
+    {
+      "name": "auth",
+      "description": "Tokens as a resource: create, rotate, revoke"
+    },
+    {
+      "name": "health",
+      "description": "Liveness, and whether rates are degraded"
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local (docker compose up)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "The `accessToken` from POST /v1/wallets or POST /v1/auth/tokens."
+      }
+    },
+    "schemas": {
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "ada@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+2348012345678"
+          },
+          "password": {
+            "type": "string",
+            "example": "correct-horse-battery-staple"
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "TokenPairResponse": {
+        "type": "object",
+        "properties": {
+          "walletId": {
+            "type": "string",
+            "description": "The wallet these tokens authenticate. Needed as `toWalletId` by a sender.",
+            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "Bearer token for all authenticated endpoints."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Used once at POST /auth/tokens/refresh, then rotated."
+          },
+          "expiresIn": {
+            "type": "number",
+            "description": "Access token lifetime in seconds.",
+            "example": 900
+          },
+          "tokenType": {
+            "type": "string",
+            "example": "Bearer"
+          }
+        },
+        "required": [
+          "walletId",
+          "accessToken",
+          "refreshToken",
+          "expiresIn",
+          "tokenType"
+        ]
+      },
+      "RefreshDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "The refresh token issued alongside the current access token.",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "RateEntryResponse": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Currency code. The valid set is whatever GET /currencies returns.",
+            "example": "cNGN"
+          },
+          "to": {
+            "type": "string",
+            "example": "USDx"
+          },
+          "rate": {
+            "type": "string",
+            "description": "Units of `to` per 1 unit of `from`, as a decimal string.",
+            "example": "0.000676"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "rate"
+        ]
+      },
+      "RatesResponse": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "description": "When the underlying rates were last refreshed upstream.",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "source": {
+            "type": "string",
+            "description": "Where these rates came from, in descending order of freshness: `live` - just fetched from the provider. `cached` - a live fetch, served from Redis within its TTL. `stale` - the provider is unavailable; last-known-good from the database. `fallback` - the provider is unavailable and no snapshot exists; committed static table.",
+            "enum": [
+              "live",
+              "cached",
+              "stale",
+              "fallback"
+            ],
+            "example": "live"
+          },
+          "degraded": {
+            "type": "boolean",
+            "description": "True only when the live provider could not be reached, so `source` is `stale` or `fallback`. A `cached` rate inside its TTL is the normal operating mode and is not reported as degraded.",
+            "example": false
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateEntryResponse"
+            }
+          }
+        },
+        "required": [
+          "asOf",
+          "source",
+          "degraded",
+          "rates"
+        ]
+      },
+      "CurrencyResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "cXAF"
+          },
+          "name": {
+            "type": "string",
+            "example": "Central African CFA franc stablecoin"
+          },
+          "peg": {
+            "type": "string",
+            "description": "ISO-4217 code of the fiat currency tracked 1:1.",
+            "example": "XAF"
+          },
+          "decimals": {
+            "type": "number",
+            "description": "Decimal places this currency admits. An amount with more is rejected.",
+            "example": 0
+          },
+          "minorUnit": {
+            "type": "string",
+            "example": "franc"
+          },
+          "smallestAmount": {
+            "type": "string",
+            "description": "Smallest representable amount.",
+            "example": "1"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "peg",
+          "decimals",
+          "minorUnit",
+          "smallestAmount"
+        ]
+      },
+      "CreateWalletDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address. Either this or `phone` is required. Stored lower-cased.",
+            "example": "ada@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Mobile number in E.164 format. Either this or `email` is required.",
+            "example": "+2348012345678"
+          },
+          "password": {
+            "type": "string",
+            "description": "At least 12 characters. Hashed with scrypt; never stored or logged in clear.",
+            "example": "correct-horse-battery-staple",
+            "minLength": 12,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "BalanceResponse": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "cNGN"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Balance as a decimal string at the currency precision. A string, not a number, because JSON numbers are IEEE-754 doubles and would corrupt the value before a client could read it.",
+            "example": "125000.00"
+          },
+          "usdEquivalent": {
+            "type": "string",
+            "description": "Equivalent in USDx at the current rate.",
+            "example": "84.521000"
+          }
+        },
+        "required": [
+          "currency",
+          "amount",
+          "usdEquivalent"
+        ]
+      },
+      "CreateWalletResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
+          },
+          "email": {
+            "type": "object",
+            "example": "ada@example.com",
+            "nullable": true
+          },
+          "phone": {
+            "type": "object",
+            "example": "+2348012345678",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:00.000Z"
+          },
+          "balances": {
+            "description": "One entry per supported currency, including zero balances.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BalanceResponse"
+            }
+          },
+          "totalUsdEquivalent": {
+            "type": "string",
+            "description": "Total value of every balance, in USDx. Each leg is floored independently, so the total is never reported higher than its true value.",
+            "example": "84.521000"
+          },
+          "totalCurrency": {
+            "type": "string",
+            "description": "The currency the total is denominated in.",
+            "example": "USDx"
+          },
+          "ratesAsOf": {
+            "type": "string",
+            "description": "When the rates used for the USD conversions were last refreshed upstream.",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "ratesSource": {
+            "type": "string",
+            "description": "Which tier of the FX chain priced this response. Anything other than `live` means the live provider was unavailable and a cached, stale or static rate was used.",
+            "enum": [
+              "live",
+              "cached",
+              "stale",
+              "fallback",
+              "pegged"
+            ],
+            "example": "live"
+          },
+          "tokens": {
+            "type": "object",
+            "description": "Token pair for the new wallet, so creation and first use are a single round trip. `walletId` here is what another wallet needs as `toWalletId` to send you money."
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "balances",
+          "totalUsdEquivalent",
+          "totalCurrency",
+          "ratesAsOf",
+          "ratesSource",
+          "tokens"
+        ]
+      },
+      "WalletResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
+          },
+          "email": {
+            "type": "object",
+            "example": "ada@example.com",
+            "nullable": true
+          },
+          "phone": {
+            "type": "object",
+            "example": "+2348012345678",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:00.000Z"
+          },
+          "balances": {
+            "description": "One entry per supported currency, including zero balances.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BalanceResponse"
+            }
+          },
+          "totalUsdEquivalent": {
+            "type": "string",
+            "description": "Total value of every balance, in USDx. Each leg is floored independently, so the total is never reported higher than its true value.",
+            "example": "84.521000"
+          },
+          "totalCurrency": {
+            "type": "string",
+            "description": "The currency the total is denominated in.",
+            "example": "USDx"
+          },
+          "ratesAsOf": {
+            "type": "string",
+            "description": "When the rates used for the USD conversions were last refreshed upstream.",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "ratesSource": {
+            "type": "string",
+            "description": "Which tier of the FX chain priced this response. Anything other than `live` means the live provider was unavailable and a cached, stale or static rate was used.",
+            "enum": [
+              "live",
+              "cached",
+              "stale",
+              "fallback",
+              "pegged"
+            ],
+            "example": "live"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "balances",
+          "totalUsdEquivalent",
+          "totalCurrency",
+          "ratesAsOf",
+          "ratesSource"
+        ]
+      },
+      "DepositDto": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Currency to credit. See GET /currencies.",
+            "example": "cNGN"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as an unsigned decimal string, at most as precise as the currency allows. A string rather than a number so no floating-point rounding can occur in transit.",
+            "example": "1500.00"
+          }
+        },
+        "required": [
+          "currency",
+          "amount"
+        ]
+      },
+      "TransactionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01a186e1-3c21-7a0e-9f22-6b1d2e4a8c90"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DEPOSIT",
+              "SWAP",
+              "TRANSFER"
+            ],
+            "example": "TRANSFER"
+          },
+          "direction": {
+            "type": "string",
+            "description": "DEBIT when this movement left the calling wallet, CREDIT when it arrived. A single transfer therefore reads as sent to one party and received by the other, without being duplicated.",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ],
+            "example": "DEBIT"
+          },
+          "sourceWalletId": {
+            "type": "string",
+            "example": "01a186de-ebf2-776d-855a-171636dc7355"
+          },
+          "destWalletId": {
+            "type": "object",
+            "nullable": true,
+            "example": "01a186df-7c10-7bb1-9a44-2f8e1c3d5a67"
+          },
+          "sourceCurrency": {
+            "type": "string",
+            "example": "USDx"
+          },
+          "sourceAmount": {
+            "type": "string",
+            "description": "Amount debited, as a decimal string.",
+            "example": "10.000000"
+          },
+          "destCurrency": {
+            "type": "string",
+            "example": "EURx"
+          },
+          "destAmount": {
+            "type": "string",
+            "description": "Amount credited, as a decimal string.",
+            "example": "9.185000"
+          },
+          "rate": {
+            "type": "string",
+            "description": "Rate applied, as units of destCurrency per 1 sourceCurrency.",
+            "example": "0.9185"
+          },
+          "rateSource": {
+            "type": "string",
+            "description": "Which tier of the FX chain supplied the rate. `pegged` means a same-currency movement, which needs no provider at all.",
+            "enum": [
+              "LIVE",
+              "CACHED",
+              "STALE",
+              "FALLBACK",
+              "PEGGED"
+            ],
+            "example": "LIVE"
+          },
+          "rateAsOf": {
+            "type": "string",
+            "description": "When the applied rate was last refreshed upstream.",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:12.401Z"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "direction",
+          "sourceWalletId",
+          "sourceCurrency",
+          "sourceAmount",
+          "destCurrency",
+          "destAmount",
+          "rate",
+          "rateSource",
+          "rateAsOf",
+          "createdAt"
+        ]
+      },
+      "SwapDto": {
+        "type": "object",
+        "properties": {
+          "fromCurrency": {
+            "type": "string",
+            "description": "Currency to debit.",
+            "example": "cNGN"
+          },
+          "toCurrency": {
+            "type": "string",
+            "description": "Currency to credit. Must differ from fromCurrency.",
+            "example": "USDx"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as an unsigned decimal string, at most as precise as the currency allows. A string rather than a number so no floating-point rounding can occur in transit. Denominated in fromCurrency.",
+            "example": "1500.00"
+          }
+        },
+        "required": [
+          "fromCurrency",
+          "toCurrency",
+          "amount"
+        ]
+      },
+      "TransferDto": {
+        "type": "object",
+        "properties": {
+          "toWalletId": {
+            "type": "string",
+            "description": "The receiving wallet. The sender is always the token holder, so there is no fromWalletId.",
+            "example": "01a186de-ebf2-776d-855a-171636dc7355"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency to debit from the sender.",
+            "example": "USDx"
+          },
+          "toCurrency": {
+            "type": "string",
+            "description": "Currency to credit to the receiver. Defaults to `currency`. When they differ the amount is converted at the current rate and both legs are recorded.",
+            "example": "EURx"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as an unsigned decimal string, at most as precise as the currency allows. A string rather than a number so no floating-point rounding can occur in transit. Denominated in currency.",
+            "example": "1500.00"
+          }
+        },
+        "required": [
+          "toWalletId",
+          "currency",
+          "amount"
+        ]
+      },
+      "HistoryEntryResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The transaction this row belongs to.",
+            "example": "01a186e1-3c21-7a0e-9f22-6b1d2e4a8c90"
+          },
+          "entryId": {
+            "type": "string",
+            "description": "The ledger entry itself. A cross-currency swap produces two rows in one wallet's statement -- a debit in the source currency and a credit in the destination -- sharing one transaction id but with distinct entry ids.",
+            "example": "01a186e1-3c22-7f41-b8d3-9a7e5c1f2b48"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DEPOSIT",
+              "SWAP",
+              "TRANSFER"
+            ],
+            "example": "TRANSFER"
+          },
+          "direction": {
+            "type": "string",
+            "description": "DEBIT when money left this wallet, CREDIT when it arrived.",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ],
+            "example": "DEBIT"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency of this row.",
+            "example": "USDx"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Magnitude of this row, as a decimal string.",
+            "example": "10.000000"
+          },
+          "balanceAfter": {
+            "type": "string",
+            "description": "This wallet's balance in this currency immediately after the row was applied.",
+            "example": "271.405660"
+          },
+          "counterpartyWalletId": {
+            "type": "object",
+            "description": "The other wallet, for a transfer. Null for deposits and swaps.",
+            "nullable": true,
+            "example": "01a186df-7c10-7bb1-9a44-2f8e1c3d5a67"
+          },
+          "sourceCurrency": {
+            "type": "string",
+            "example": "USDx"
+          },
+          "sourceAmount": {
+            "type": "string",
+            "example": "10.000000"
+          },
+          "destCurrency": {
+            "type": "string",
+            "example": "EURx"
+          },
+          "destAmount": {
+            "type": "string",
+            "example": "9.185000"
+          },
+          "rate": {
+            "type": "string",
+            "description": "Rate applied to the whole transaction.",
+            "example": "0.9185"
+          },
+          "rateSource": {
+            "type": "string",
+            "enum": [
+              "LIVE",
+              "CACHED",
+              "STALE",
+              "FALLBACK",
+              "PEGGED"
+            ],
+            "example": "LIVE"
+          },
+          "rateAsOf": {
+            "type": "string",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:12.401Z"
+          }
+        },
+        "required": [
+          "id",
+          "entryId",
+          "type",
+          "direction",
+          "currency",
+          "amount",
+          "balanceAfter",
+          "sourceCurrency",
+          "sourceAmount",
+          "destCurrency",
+          "destAmount",
+          "rate",
+          "rateSource",
+          "rateAsOf",
+          "createdAt"
+        ]
+      },
+      "TransactionPageResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntryResponse"
+            }
+          },
+          "nextCursor": {
+            "type": "object",
+            "description": "Pass as `cursor` to fetch the next page. Null on the last page.",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
+        ]
+      },
+      "AttemptResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01a186e2-5f80-7b12-a3c4-7d9e1f2a3b4c"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DEPOSIT",
+              "SWAP",
+              "TRANSFER"
+            ],
+            "example": "SWAP"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "example": "FAILED"
+          },
+          "transactionId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Set when the attempt succeeded."
+          },
+          "errorCode": {
+            "type": "object",
+            "nullable": true,
+            "example": "INSUFFICIENT_FUNDS"
+          },
+          "errorMessage": {
+            "type": "object",
+            "nullable": true,
+            "example": "Insufficient funds"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Correlation id, matching the `requestId` the client saw in the error envelope.",
+            "example": "01a186de-eff5-7145-aec9-fef34adc48d9"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:12.401Z"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "outcome",
+          "requestId",
+          "createdAt"
+        ]
+      },
+      "AttemptPageResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttemptResponse"
+            }
+          },
+          "nextCursor": {
+            "type": "object",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
+        ]
+      }
+    }
+  }
+}

@@ -4,8 +4,11 @@ import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { SwaggerModule } from '@nestjs/swagger';
+
 import { AppModule } from './app.module';
 import type { EnvSchema } from './config/env.schema';
+import { buildOpenApiDocument } from './openapi';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -22,11 +25,20 @@ async function bootstrap(): Promise<void> {
       transformOptions: { enableImplicitConversion: false },
     }),
   );
+  // Served from the same builder the committed openapi.json is generated from,
+  // so the live UI and the checked-in spec cannot describe different APIs.
+  SwaggerModule.setup('docs', app, buildOpenApiDocument(app), {
+    swaggerOptions: { persistAuthorization: true, displayRequestDuration: true },
+    customSiteTitle: 'Operation Borderless API',
+  });
+
   app.enableShutdownHooks();
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);
-  new Logger('Bootstrap').log(`Operation Borderless listening on http://localhost:${port}`);
+  const logger = new Logger('Bootstrap');
+  logger.log(`Operation Borderless listening on http://localhost:${port}`);
+  logger.log(`API docs at http://localhost:${port}/docs`);
 }
 
 void bootstrap();
