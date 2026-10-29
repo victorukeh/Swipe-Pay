@@ -12,10 +12,13 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "sourceMap": true,
+    "rootDir": "./",
     "outDir": "./dist",
     "incremental": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    // ts-jest requires this with node16-style module resolution.
+    "isolatedModules": true,
 
     "strict": true,
     "noImplicitAny": true,

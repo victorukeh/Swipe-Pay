@@ -45,6 +45,7 @@ CREATE TABLE "balances" (
     "wallet_id" UUID NOT NULL,
     "currency" "Currency" NOT NULL,
     "amount" BIGINT NOT NULL DEFAULT 0,
+    "allow_negative" BOOLEAN NOT NULL DEFAULT false,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "balances_pkey" PRIMARY KEY ("wallet_id","currency")
@@ -63,7 +64,6 @@ CREATE TABLE "transactions" (
     "rate_scaled" BIGINT NOT NULL,
     "rate_source" "RateSource" NOT NULL,
     "rate_as_of" TIMESTAMP(3) NOT NULL,
-    "rounding_residual" BIGINT NOT NULL DEFAULT 0,
     "idempotency_key" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -194,10 +194,17 @@ ALTER TABLE "transaction_attempts" ADD CONSTRAINT "transaction_attempts_transact
 -- negative balance is a stronger guarantee than one that merely isn't asked to.
 -- ---------------------------------------------------------------------------
 
--- A balance can never go negative. If a bug ever skipped the application check,
--- the transaction aborts here instead of silently creating money.
+-- A customer balance can never go negative. If a bug ever skipped the
+-- application check, the transaction aborts here instead of silently creating
+-- money.
+--
+-- Internal clearing accounts are exempt, because a clearing account carrying a
+-- negative (credit) position is correct accounting rather than a bug:
+-- SYSTEM_MINT sits negative by the total supply it has issued, and SYSTEM_FX
+-- sits negative in whichever currency it is currently paying out of.
 ALTER TABLE "balances"
-  ADD CONSTRAINT "balances_amount_non_negative" CHECK ("amount" >= 0);
+  ADD CONSTRAINT "balances_amount_non_negative"
+  CHECK ("allow_negative" = true OR "amount" >= 0);
 
 -- Ledger entries carry their sign in `direction`, so the magnitude is positive.
 -- Zero-value entries are not written at all (a conversion with no rounding
@@ -217,9 +224,6 @@ ALTER TABLE "transactions"
 
 ALTER TABLE "transactions"
   ADD CONSTRAINT "transactions_rate_positive" CHECK ("rate_scaled" > 0);
-
-ALTER TABLE "transactions"
-  ADD CONSTRAINT "transactions_rounding_residual_non_negative" CHECK ("rounding_residual" >= 0);
 
 -- A deposit has no counterparty; a swap's counterparty is the same wallet; a
 -- transfer always has a distinct counterparty. Encoding this stops a malformed

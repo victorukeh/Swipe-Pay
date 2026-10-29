@@ -110,9 +110,14 @@ model Credential {
 model Balance {
   walletId  String   @map("wallet_id") @db.Uuid
   currency  Currency
-  /// Minor units. Never negative — guarded in the application and by a CHECK
-  /// constraint added in the migration.
+  /// Minor units. Never negative for customer wallets — guarded in the
+  /// application and by a CHECK constraint added in the migration.
   amount    BigInt   @default(0)
+  /// True only for internal clearing accounts. A clearing account legitimately
+  /// carries a negative (credit) position: SYSTEM_MINT goes negative by the total
+  /// supply it has issued, and SYSTEM_FX goes negative in whichever currency it is
+  /// currently paying out. Customer balances are never allowed to.
+  allowNegative Boolean @default(false) @map("allow_negative")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
@@ -146,10 +151,6 @@ model Transaction {
   /// When the rate used here was last refreshed upstream.
   rateAsOf   DateTime   @map("rate_as_of")
 
-  /// Rounding residual created by the conversion, in destination minor units.
-  /// Posted to the SYSTEM_ROUNDING wallet so the ledger still sums to zero.
-  roundingResidual BigInt @default(0) @map("rounding_residual")
-
   idempotencyKey String?  @map("idempotency_key")
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -164,10 +165,21 @@ model Transaction {
   @@map("transactions")
 }
 
-/// Double-entry. Every transaction writes a DEBIT and a CREDIT (plus a rounding
-/// entry when a conversion leaves a residual). A wallet's history is a query over
-/// this table, which is why a single transfer row reads correctly as "sent" for
-/// one wallet and "received" for the other without being duplicated.
+/// Double-entry, append-only.
+///
+/// Every transaction writes balanced pairs, so the signed sum of all entries in
+/// any one currency is exactly zero — including deposits and cross-currency
+/// conversions, which is only possible because the counter-leg goes to an
+/// internal clearing account:
+///
+///   DEPOSIT              SYSTEM_MINT debit  -> user credit
+///   TRANSFER (same ccy)  sender debit       -> receiver credit
+///   SWAP / TRANSFER      user debit (src)   -> SYSTEM_FX credit (src)
+///   (cross-currency)     SYSTEM_FX debit (dst) -> receiver credit (dst)
+///
+/// A wallet's history is a query over this table, which is why a single transfer
+/// row reads correctly as "sent" for one wallet and "received" for the other
+/// without being duplicated.
 model LedgerEntry {
   id            String          @id @db.Uuid
   transactionId String          @map("transaction_id") @db.Uuid
