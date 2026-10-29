@@ -44,8 +44,17 @@ interface CurrencySeed {
   sortOrder: string;
 }
 
+/**
+ * Resolved from the working directory, not from __dirname.
+ *
+ * The same file has to be found whether this runs as TypeScript from the repo
+ * root in development or as compiled JavaScript from /app in the container,
+ * where __dirname is /app/dist. The working directory is the project root in
+ * both cases.
+ */
 function loadCurrencies(): CurrencySeed[] {
-  const file = join(__dirname, 'seeds', 'currencies.json');
+  const file =
+    process.env.CURRENCY_SEED_FILE ?? join(process.cwd(), 'prisma', 'seeds', 'currencies.json');
   return JSON.parse(readFileSync(file, 'utf8')) as CurrencySeed[];
 }
 

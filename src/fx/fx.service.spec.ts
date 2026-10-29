@@ -8,6 +8,7 @@ import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-code';
 import { MoneyUtil } from '../money/money.util';
 import type { RedisService } from '../redis/redis.service';
+import { isDegradedSource } from './fx.degraded';
 import { FxService } from './fx.service';
 import type { FxRateProvider, RateSourceName, RateTable } from './fx.types';
 import type { SnapshotFxProvider } from './providers/snapshot-fx.provider';
@@ -256,6 +257,19 @@ describe('FxService rate derivation', () => {
       expect(BigInt(entry.rateScaled)).toBeGreaterThan(0n);
       if (entry.from === entry.to) expect(entry.rate).toBe('1');
     }
+  });
+
+  it('does not treat a warm cache as degraded', () => {
+    // A cache hit inside its TTL is the normal operating mode. Reporting it as
+    // degraded would mean the service called itself degraded almost always.
+    expect(isDegradedSource('live')).toBe(false);
+    expect(isDegradedSource('cached')).toBe(false);
+    expect(isDegradedSource('pegged')).toBe(false);
+  });
+
+  it('treats a snapshot or static rate as degraded', () => {
+    expect(isDegradedSource('stale')).toBe(true);
+    expect(isDegradedSource('fallback')).toBe(true);
   });
 
   it('reports the degraded source on every pair when the provider is down', async () => {

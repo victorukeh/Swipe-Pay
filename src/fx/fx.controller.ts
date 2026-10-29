@@ -8,6 +8,7 @@ import {
 
 import { Public } from '../auth/public.decorator';
 import { CurrencyRegistry } from '../money/currency-registry.service';
+import { isDegradedSource } from './fx.degraded';
 import { MoneyUtil } from '../money/money.util';
 import { CurrencyResponse, RatesResponse } from './dto/rates.response';
 import { FxService } from './fx.service';
@@ -38,7 +39,7 @@ export class FxController {
     return {
       asOf: asOf.toISOString(),
       source,
-      degraded: source !== 'live',
+      degraded: isDegradedSource(source),
       rates: rates.map(({ from, to, rate }) => ({ from, to, rate })),
     };
   }

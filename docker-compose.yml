@@ -1,0 +1,83 @@
+# One command brings up the API, PostgreSQL and Redis:
+#
+#   docker compose up --build
+#
+# Migrations and the seed run from the API container's entrypoint, so there is no
+# second step. Host ports are overridable because 5432 and 6379 are often already
+# taken on a developer machine:
+#
+#   POSTGRES_PORT=55432 REDIS_PORT=56379 docker compose up
+
+name: operation-borderless
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    ports:
+      - '${API_PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: v1
+      # Service names, not localhost: inside the compose network the database is
+      # reachable at `postgres` on its container port.
+      DATABASE_URL: postgresql://borderless:borderless@postgres:5432/borderless?schema=public
+      REDIS_URL: redis://redis:6379
+      # Development defaults. Both are validated at boot and must be 32+ chars;
+      # a real deployment supplies its own.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me-0123456789abcdef}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-0123456789abcdef}
+      JWT_ACCESS_TTL: 900
+      JWT_REFRESH_TTL: 2592000
+      # `${VAR-default}` without the colon, so an explicitly empty value is
+      # respected rather than replaced: blanking this is the documented way to
+      # force the fallback chain and exercise a provider outage.
+      FX_PROVIDER_URL: ${FX_PROVIDER_URL-https://open.er-api.com/v6/latest/USD}
+      FX_PROVIDER_TIMEOUT_MS: 4000
+      FX_CACHE_TTL_SECONDS: 300
+      FX_SNAPSHOT_MAX_AGE_SECONDS: 86400
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: borderless
+      POSTGRES_PASSWORD: borderless
+      POSTGRES_DB: borderless
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The API's entrypoint waits for this before migrating, so a cold start
+      # cannot race the database.
+      test: ['CMD-SHELL', 'pg_isready -U borderless -d borderless']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    # Token revocation and the rate cache are both reconstructible, so there is
+    # no reason to persist Redis: an empty cache costs one provider fetch, and
+    # the durable last-known-good rates live in PostgreSQL.
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:

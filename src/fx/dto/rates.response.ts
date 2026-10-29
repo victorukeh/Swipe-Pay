@@ -41,7 +41,10 @@ export class RatesResponse {
   source!: RateSourceName;
 
   @ApiProperty({
-    description: 'True when `source` is anything other than a current live fetch.',
+    description:
+      'True only when the live provider could not be reached, so `source` is `stale` or ' +
+      '`fallback`. A `cached` rate inside its TTL is the normal operating mode and is not ' +
+      'reported as degraded.',
     example: false,
   })
   degraded!: boolean;
