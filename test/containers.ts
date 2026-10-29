@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
 
+const PRISMA_CLI = join(__dirname, '..', 'node_modules', 'prisma', 'build', 'index.js');
+
 export interface TestInfra {
   databaseUrl: string;
   redisUrl: string;
@@ -58,11 +60,21 @@ export async function startInfra(): Promise<TestInfra> {
   };
 }
 
-/** Applies the committed migrations to a freshly started database. */
+/**
+ * Applies the committed migrations to a freshly started database.
+ *
+ * Invokes Prisma's entry point with the current Node binary rather than going
+ * through `yarn prisma`. The package manager is vendored via .yarnrc.yml's
+ * yarnPath and is not necessarily on PATH, so shelling out to `yarn` makes the
+ * suite depend on how the developer happens to have installed it -- which is
+ * exactly how this hung the first time.
+ */
 export function applyMigrations(databaseUrl: string): void {
-  execFileSync('yarn', ['prisma', 'migrate', 'deploy'], {
+  execFileSync(process.execPath, [PRISMA_CLI, 'migrate', 'deploy'], {
+    cwd: join(__dirname, '..'),
     env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: 'inherit',
+    timeout: 120_000,
   });
 }
 

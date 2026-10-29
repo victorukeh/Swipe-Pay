@@ -59,7 +59,6 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
-  /** Write a key with a TTL, treating any Redis failure as a no-op. */
   async setEx(key: string, seconds: number, value: string): Promise<void> {
     try {
       await this.client.set(key, value, 'EX', Math.max(1, seconds));

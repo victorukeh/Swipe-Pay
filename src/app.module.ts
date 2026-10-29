@@ -24,6 +24,16 @@ import { WalletsModule } from './wallets/wallets.module';
       cache: true,
       validate: validateEnv,
       envFilePath: ['.env.local', '.env'],
+      /*
+       * Tests take their configuration from the environment only.
+       *
+       * A developer's .env would otherwise leak into the suite -- which is not
+       * hypothetical: it overrode the FX cache TTL so a stale rate table was
+       * served instead of the seeded fixture, and every converted amount was
+       * asserted against the wrong number. Worse, it could point the suite at a
+       * development database.
+       */
+      ignoreEnvFile: process.env['NODE_ENV'] === 'test',
     }),
     PrismaModule,
     RedisModule,

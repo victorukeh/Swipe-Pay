@@ -115,7 +115,7 @@ export class WalletsService {
       ),
     }));
 
-    const total = this.money.totalInUsd(
+    const total = this.money.totalBalancesInUsd(
       rows.map(({ currency, amount }) => ({ currency: currency.code, amount })),
       rateTo,
     );

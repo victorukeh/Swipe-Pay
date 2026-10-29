@@ -4,8 +4,6 @@ import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
 
-const prisma = new PrismaClient();
-
 /**
  * Clearing accounts.
  *
@@ -68,7 +66,7 @@ function loadCurrencies(): CurrencySeed[] {
  * prisma/seeds/currencies.json; changing an existing currency's precision is not
  * a seed operation.
  */
-async function seedCurrencies(): Promise<string[]> {
+async function seedCurrencies(prisma: PrismaClient, log: boolean): Promise<string[]> {
   const seeds = loadCurrencies();
 
   for (const seed of seeds) {
@@ -85,11 +83,19 @@ async function seedCurrencies(): Promise<string[]> {
     });
   }
 
-  console.log(`seed: ${seeds.length} currencies present (${seeds.map((s) => s.code).join(', ')})`);
+  if (log) {
+    console.log(
+      `seed: ${seeds.length} currencies present (${seeds.map((s) => s.code).join(', ')})`,
+    );
+  }
   return seeds.map((s) => s.code);
 }
 
-async function seedSystemWallets(currencyCodes: string[]): Promise<void> {
+async function seedSystemWallets(
+  prisma: PrismaClient,
+  currencyCodes: string[],
+  log: boolean,
+): Promise<void> {
   for (const systemKey of SYSTEM_KEYS) {
     const existing = await prisma.wallet.findUnique({ where: { systemKey } });
     const wallet =
@@ -108,22 +114,32 @@ async function seedSystemWallets(currencyCodes: string[]): Promise<void> {
       skipDuplicates: true,
     });
 
-    console.log(
-      existing
-        ? `seed: ${systemKey} already present (${wallet.id})`
-        : `seed: created ${systemKey} (${wallet.id})`,
-    );
+    if (log) {
+      console.log(
+        existing
+          ? `seed: ${systemKey} already present (${wallet.id})`
+          : `seed: created ${systemKey} (${wallet.id})`,
+      );
+    }
   }
 }
 
-async function main(): Promise<void> {
-  const codes = await seedCurrencies();
-  await seedSystemWallets(codes);
+/**
+ * Exported so the test harness can seed its own database without shelling out
+ * to a package manager, which is not guaranteed to be on PATH.
+ */
+export async function runSeed(prisma: PrismaClient, log = true): Promise<void> {
+  const codes = await seedCurrencies(prisma, log);
+  await seedSystemWallets(prisma, codes, log);
 }
 
-main()
-  .catch((error: unknown) => {
-    console.error('seed failed:', error);
-    process.exitCode = 1;
-  })
-  .finally(() => void prisma.$disconnect());
+/** CLI entry point. Only runs when this file is executed directly. */
+if (require.main === module) {
+  const prisma = new PrismaClient();
+  runSeed(prisma)
+    .catch((error: unknown) => {
+      console.error('seed failed:', error);
+      process.exitCode = 1;
+    })
+    .finally(() => void prisma.$disconnect());
+}
