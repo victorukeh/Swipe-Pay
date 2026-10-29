@@ -42,6 +42,8 @@ function config(): ConfigService<EnvSchema, true> {
     JWT_REFRESH_TTL: 2_592_000,
     JWT_ACCESS_SECRET: ACCESS_SECRET,
     JWT_REFRESH_SECRET: REFRESH_SECRET,
+    PASSWORD_KEY_LENGTH: 64,
+    PASSWORD_SALT_BYTES: 16,
   };
   return { get: (key: string) => values[key] } as unknown as ConfigService<EnvSchema, true>;
 }
@@ -56,7 +58,7 @@ function build(
   wallet?: { id: string; isSystem: boolean; passwordHash: string; salt: string } | null,
 ): Fixture {
   const store = memoryStore();
-  const passwords = new PasswordService();
+  const passwords = new PasswordService(config());
   const prisma = {
     wallet: {
       findFirst: jest.fn().mockResolvedValue(
@@ -82,12 +84,12 @@ function build(
 }
 
 async function walletWithPassword(password: string) {
-  const { hash, salt } = await new PasswordService().hash(password);
+  const { hash, salt } = await new PasswordService(config()).hash(password);
   return { id: WALLET_ID, isSystem: false, passwordHash: hash, salt };
 }
 
 describe('PasswordService', () => {
-  const service = new PasswordService();
+  const service = new PasswordService(config());
 
   it('verifies a correct password', async () => {
     const { hash, salt } = await service.hash('correct-horse-battery');

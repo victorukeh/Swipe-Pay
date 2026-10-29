@@ -83,7 +83,7 @@ export class AuthService {
     });
 
     if (!wallet?.credential) {
-      await this.passwords.verify(input.password, 'dummy-salt', '00'.repeat(64));
+      await this.passwords.burnVerifyCost(input.password);
       throw AppError.invalidCredentials();
     }
 
@@ -134,8 +134,6 @@ export class AuthService {
       throw AppError.tokenRevoked();
     }
 
-    // Revoke before issuing. If issuing then failed, the client has to log in
-    // again — strictly better than leaving a replayable token alive.
     await this.tokens.revokeRefresh(claims.jti, claims.sub);
 
     const wallet = await this.prisma.wallet.findUnique({ where: { id: claims.sub } });

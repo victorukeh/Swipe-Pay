@@ -14,12 +14,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: cardtonic
-          POSTGRES_PASSWORD: cardtonic
-          POSTGRES_DB: cardtonic_test
+          POSTGRES_USER: borderless
+          POSTGRES_PASSWORD: borderless
+          POSTGRES_DB: borderless_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U cardtonic"
+          --health-cmd "pg_isready -U borderless"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
@@ -31,9 +31,9 @@ jobs:
     env:
       # Supplying these makes the test suite use the service containers above
       # instead of spinning up its own via testcontainers.
-      TEST_DATABASE_URL: postgresql://cardtonic:cardtonic@localhost:5432/cardtonic_test?schema=public
+      TEST_DATABASE_URL: postgresql://borderless:borderless@localhost:5432/borderless_test?schema=public
       TEST_REDIS_URL: redis://localhost:6379
-      DATABASE_URL: postgresql://cardtonic:cardtonic@localhost:5432/cardtonic_test?schema=public
+      DATABASE_URL: postgresql://borderless:borderless@localhost:5432/borderless_test?schema=public
 
     steps:
       - uses: actions/checkout@v4

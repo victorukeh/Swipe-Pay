@@ -3,7 +3,7 @@ import { MoneyError } from './money.error';
 import type { ConversionResult } from './money.types';
 
 /**
- * All money arithmetic in Cardtonic. Nothing else is allowed to do it.
+ * All money arithmetic in Operation Borderless. Nothing else is allowed to do it.
  *
  * ## Why integers
  *

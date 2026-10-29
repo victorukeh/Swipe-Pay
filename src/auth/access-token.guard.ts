@@ -2,17 +2,10 @@ import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 
 import { AppError } from '../common/errors/app-error';
-import type { CardtonicRequest } from '../common/request-context';
+import type { BorderlessRequest } from '../common/request-context';
 import { AuthService } from './auth.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
-/**
- * Registered globally, so every route is authenticated unless it opts out with
- * `@Public()`.
- *
- * Deny-by-default is the only safe arrangement for a money API: forgetting a
- * decorator then makes an endpoint unreachable rather than silently open.
- */
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
   constructor(
@@ -27,7 +20,7 @@ export class AccessTokenGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const request = context.switchToHttp().getRequest<CardtonicRequest>();
+    const request = context.switchToHttp().getRequest<BorderlessRequest>();
     const header = request.headers.authorization;
 
     if (typeof header !== 'string' || !header.startsWith('Bearer ')) {

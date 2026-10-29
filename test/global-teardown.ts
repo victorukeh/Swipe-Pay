@@ -1,3 +1,3 @@
 export default async function globalTeardown(): Promise<void> {
-  await globalThis.__CARDTONIC_INFRA_STOP__?.();
+  await globalThis.__BORDERLESS_INFRA_STOP__?.();
 }

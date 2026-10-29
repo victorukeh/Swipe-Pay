@@ -26,7 +26,7 @@ async function bootstrap(): Promise<void> {
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);
-  new Logger('Bootstrap').log(`Cardtonic listening on http://localhost:${port}`);
+  new Logger('Bootstrap').log(`Operation Borderless listening on http://localhost:${port}`);
 }
 
 void bootstrap();

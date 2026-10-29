@@ -1,7 +1,7 @@
 {
-  "name": "cardtonic",
+  "name": "operation-borderless",
   "version": "1.0.0",
-  "description": "Cardtonic \u2014 a cross-border stablecoin payment sandbox (Operation Borderless)",
+  "description": "Operation Borderless - a cross-border stablecoin payment sandbox",
   "license": "MIT",
   "private": true,
   "packageManager": "yarn@4.18.1",

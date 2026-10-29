@@ -50,6 +50,22 @@ export class EnvSchema {
   @Min(300)
   JWT_REFRESH_TTL = 2_592_000;
 
+  /**
+   * scrypt output length in bytes. Raising it only affects newly written
+   * credentials: `PasswordService.verify` takes the length from the stored hash,
+   * so existing logins keep working across a change.
+   */
+  @IsInt()
+  @Min(32)
+  @Max(256)
+  PASSWORD_KEY_LENGTH = 64;
+
+  /** Salt length in bytes for new credentials. 16 is the OWASP floor. */
+  @IsInt()
+  @Min(16)
+  @Max(64)
+  PASSWORD_SALT_BYTES = 16;
+
   @IsOptional()
   @IsString()
   FX_PROVIDER_URL = 'https://open.er-api.com/v6/latest/USD';
@@ -71,6 +87,8 @@ const NUMERIC_KEYS = [
   'PORT',
   'JWT_ACCESS_TTL',
   'JWT_REFRESH_TTL',
+  'PASSWORD_KEY_LENGTH',
+  'PASSWORD_SALT_BYTES',
   'FX_PROVIDER_TIMEOUT_MS',
   'FX_CACHE_TTL_SECONDS',
   'FX_SNAPSHOT_MAX_AGE_SECONDS',

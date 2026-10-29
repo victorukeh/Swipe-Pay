@@ -1,7 +1,7 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 
 import { AppError } from '../common/errors/app-error';
-import type { AuthenticatedWallet, CardtonicRequest } from '../common/request-context';
+import type { AuthenticatedWallet, BorderlessRequest } from '../common/request-context';
 
 /**
  * Injects the authenticated wallet into a handler.
@@ -13,7 +13,7 @@ import type { AuthenticatedWallet, CardtonicRequest } from '../common/request-co
  */
 export const CurrentWallet = createParamDecorator(
   (_data: unknown, context: ExecutionContext): AuthenticatedWallet => {
-    const request = context.switchToHttp().getRequest<CardtonicRequest>();
+    const request = context.switchToHttp().getRequest<BorderlessRequest>();
     if (!request.wallet) {
       // Only reachable if a handler used this decorator on a @Public route.
       throw AppError.unauthenticated();

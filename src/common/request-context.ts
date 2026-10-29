@@ -16,7 +16,7 @@ export interface AuthenticatedWallet {
   readonly expiresAt?: number | undefined;
 }
 
-export interface CardtonicRequest extends Request {
+export interface BorderlessRequest extends Request {
   requestId?: string;
   wallet?: AuthenticatedWallet;
   /** Set by the idempotency interceptor from the Idempotency-Key header. */

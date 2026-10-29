@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 // globalSetup runs in a different process to the test workers, so the resolved
 // connection strings are handed over through a temp file rather than env mutation.
-const file = process.env.CARDTONIC_INFRA_FILE;
+const file = process.env.BORDERLESS_INFRA_FILE;
 if (file) {
   const infra = JSON.parse(readFileSync(file, 'utf8')) as {
     databaseUrl: string;

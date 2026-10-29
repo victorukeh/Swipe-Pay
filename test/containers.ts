@@ -35,9 +35,9 @@ export async function startInfra(): Promise<TestInfra> {
     providedDb ??
     (await (async () => {
       pg = await new PostgreSqlContainer('postgres:16-alpine')
-        .withDatabase('cardtonic_test')
-        .withUsername('cardtonic')
-        .withPassword('cardtonic')
+        .withDatabase('borderless_test')
+        .withUsername('borderless')
+        .withPassword('borderless')
         .start();
       return `${pg.getConnectionUri()}?schema=public`;
     })());
@@ -68,7 +68,7 @@ export function applyMigrations(databaseUrl: string): void {
 
 /** Writes the resolved connection strings where every worker process can read them. */
 export function persistInfraEnv(infra: Pick<TestInfra, 'databaseUrl' | 'redisUrl'>): string {
-  const file = join(mkdtempSync(join(tmpdir(), 'cardtonic-test-')), 'infra.json');
+  const file = join(mkdtempSync(join(tmpdir(), 'borderless-test-')), 'infra.json');
   writeFileSync(file, JSON.stringify(infra));
   return file;
 }

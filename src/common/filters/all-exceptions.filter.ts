@@ -10,7 +10,7 @@ import type { Response } from 'express';
 
 import { toAppError } from '../errors/error-mapper';
 import type { ErrorEnvelope } from '../errors/error.types';
-import { type CardtonicRequest } from '../request-context';
+import { type BorderlessRequest } from '../request-context';
 
 const SERVER_ERROR: number = HttpStatus.INTERNAL_SERVER_ERROR;
 
@@ -33,7 +33,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
-    const request = http.getRequest<CardtonicRequest>();
+    const request = http.getRequest<BorderlessRequest>();
     const response = http.getResponse<Response>();
 
     const appError = toAppError(exception);
