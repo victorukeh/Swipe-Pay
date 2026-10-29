@@ -9,6 +9,7 @@ import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { validateEnv } from './config/env.schema';
 import { FxModule } from './fx/fx.module';
+import { HistoryModule } from './history/history.module';
 import { MoneyModule } from './money/money.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
@@ -30,6 +31,7 @@ import { WalletsModule } from './wallets/wallets.module';
     FxModule,
     WalletsModule,
     TransactionsModule,
+    HistoryModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
