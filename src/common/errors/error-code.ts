@@ -1,13 +1,12 @@
 /**
  * Every failure this API can return, as a stable machine-readable code.
  *
- * Clients branch on `code`, never on `message` or on the HTTP status alone —
- * three different things return 422 and a client needs to tell them apart. The
+ * Clients branch on `code`, never on `message` or on the HTTP status alone.
+ * Three different things return 422 and a client needs to tell them apart. The
  * codes are part of the public contract: the README documents each one with its
  * cause, and there is a test per code.
  */
 export const ErrorCode = {
-  /** Request body or query failed DTO validation. */
   VALIDATION_FAILED: 'VALIDATION_FAILED',
   /** Amount was not a well-formed unsigned decimal string. */
   INVALID_AMOUNT: 'INVALID_AMOUNT',

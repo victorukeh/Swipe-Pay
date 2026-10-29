@@ -6,6 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import { Public } from '../auth/public.decorator';
 import { CurrencyRegistry } from '../money/currency-registry.service';
 import { MoneyUtil } from '../money/money.util';
 import { CurrencyResponse, RatesResponse } from './dto/rates.response';
@@ -19,6 +20,7 @@ export class FxController {
     private readonly currencies: CurrencyRegistry,
   ) {}
 
+  @Public()
   @Get('rates')
   @ApiOperation({
     summary: 'Current conversion rates between all supported stablecoins',
@@ -41,6 +43,7 @@ export class FxController {
     };
   }
 
+  @Public()
   @Get('currencies')
   @ApiOperation({
     summary: 'Supported stablecoins, their fiat pegs and their precision',

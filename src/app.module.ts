@@ -1,7 +1,9 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
+import { AccessTokenGuard } from './auth/access-token.guard';
+import { AuthModule } from './auth/auth.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
@@ -22,11 +24,16 @@ import { RedisModule } from './redis/redis.module';
     PrismaModule,
     RedisModule,
     MoneyModule,
+    AuthModule,
     FxModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: NoStoreInterceptor },
+    // Deny by default: every route needs a valid access token unless it is
+    // explicitly marked @Public(). Forgetting a decorator makes an endpoint
+    // unreachable rather than silently open.
+    { provide: APP_GUARD, useClass: AccessTokenGuard },
   ],
 })
 export class AppModule implements NestModule {

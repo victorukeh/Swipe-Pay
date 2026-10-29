@@ -5,8 +5,6 @@ import { MoneyError } from '../../money/money.error';
 import { AppError } from './app-error';
 import { ErrorCode, type ErrorCodeValue } from './error-code';
 
-// `HttpException.getStatus()` returns a plain number, so compare against plain
-// numbers rather than enum members.
 const BAD_REQUEST: number = HttpStatus.BAD_REQUEST;
 const UNAUTHORIZED: number = HttpStatus.UNAUTHORIZED;
 const FORBIDDEN: number = HttpStatus.FORBIDDEN;

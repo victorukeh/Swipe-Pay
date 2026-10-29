@@ -7,6 +7,13 @@ export interface AuthenticatedWallet {
   readonly walletId: string;
   /** JWT id of the presented access token, so logout can revoke exactly it. */
   readonly jti: string;
+  /**
+   * The token's `exp` claim, in seconds.
+   *
+   * Logout denylists the token for exactly its remaining lifetime, so the
+   * denylist entry expires with the token instead of accumulating forever.
+   */
+  readonly expiresAt?: number | undefined;
 }
 
 export interface CardtonicRequest extends Request {
