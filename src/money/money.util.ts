@@ -284,10 +284,6 @@ export class MoneyUtil {
     return total;
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   /** Integer division rounding half away from zero. Inputs here are non-negative. */
   private static divideHalfUp(numerator: bigint, denominator: bigint): bigint {
     const quotient = numerator / denominator;

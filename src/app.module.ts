@@ -6,7 +6,9 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { NoStoreInterceptor } from './common/interceptors/no-store.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { validateEnv } from './config/env.schema';
+import { FxModule } from './fx/fx.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { PrismaModule } from './prisma/prisma.module';
       envFilePath: ['.env.local', '.env'],
     }),
     PrismaModule,
+    RedisModule,
+    FxModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

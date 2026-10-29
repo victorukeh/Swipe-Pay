@@ -44,6 +44,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
+      // `expect(obj.method).toHaveBeenCalled()` is the standard Jest idiom and
+      // deliberately passes the function unbound.
+      '@typescript-eslint/unbound-method': 'off',
     },
   },
 );
