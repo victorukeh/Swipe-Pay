@@ -290,8 +290,8 @@ happen or neither does, and concurrent debits must not overdraw a balance.**
   rounding behaviour of its own to reason about.
 - **Constraints the application cannot forget.** A database that *cannot*
   represent a negative customer balance is a stronger guarantee than one that
-  merely isn't asked to. Sixteen `CHECK` constraints and two triggers enforce
-  this.
+  merely isn't asked to. Sixteen `CHECK` constraints and seven triggers enforce
+  this — including the ones that make `balances` derived rather than writable.
 - **Unique constraints as a concurrency primitive.** Wallet-contact uniqueness
   and idempotency both rely on the database rejecting a duplicate, not on a
   read-then-write that two requests could both pass.
@@ -305,6 +305,69 @@ Prisma was chosen for its migration workflow and generated types. Row locks need
 arguably a feature, as the lock is then explicit and reviewable.
 
 ---
+
+### Why `balances` is a projection the database owns
+
+The obvious objection to a `balances` table is that it stores something already
+implied by the ledger. If the entries are the truth, why keep a second copy that
+has to agree with them? Pure event sourcing — balance as `SUM(entries)`,
+computed on read — has one source of truth and the cleanest audit story
+available.
+
+It was not chosen, and the reason is the overdraft check.
+
+The check needs something to **lock**. Here it is one row:
+
+```sql
+SELECT amount FROM balances WHERE wallet_id = $1 AND currency = $2 FOR UPDATE
+```
+
+With no balances row the check becomes `SELECT SUM(…) FROM ledger_entries`, and
+**a sum cannot be locked.** There is no row to take, so two concurrent debits
+both compute the same total, both pass, and the wallet overdraws. Every fix
+reintroduces something: an advisory lock or a `wallet_locks` row is a row again,
+just without the amount; `SERIALIZABLE` plus retry is correct but adds
+retry logic that is easy to get subtly wrong and degrades under contention on a
+hot wallet. And read cost would grow with history, so snapshots become
+necessary — which is a balances table wearing a different hat, now with
+staleness as a new correctness problem.
+
+**So the projection stays, but the application cannot write it.** The only write
+it can make is an append:
+
+| | |
+|---|---|
+| Application | `INSERT INTO ledger_entries (…)` — and nothing else |
+| `ledger_entries_apply_to_balance` | applies the signed delta to `balances`, returns the result, writes it to `balance_after` |
+| `ledger_entries_no_update` / `_no_delete` | the log is append-only; a correction is a compensating entry |
+| `balances_amount_is_derived` | rejects any change to `amount` not made by the trigger above |
+| `balances_start_at_zero` | a new balance row cannot arrive with money in it |
+
+That removes the thing actually worth worrying about. Previously the balance
+existed in two places that agreed *by convention* — there was a test asserting
+it, which is itself the tell — and an `UPDATE balances SET amount = …` could set
+any value and leave nothing behind to say so. Now divergence is structurally
+impossible, and `balance_after` is the database's own arithmetic rather than
+something the application asserted.
+
+**What this is not.** It is not a defence against an attacker who already holds
+owner or superuser rights — they can disable a trigger. What it does is remove a
+class of application bug and block injected DML against either table. The
+production hardening on top is a least-privilege role, which this sandbox omits
+only because it connects as the schema owner:
+
+```sql
+REVOKE UPDATE, DELETE ON ledger_entries FROM borderless_app;
+REVOKE UPDATE          ON balances      FROM borderless_app;
+```
+
+**The honest remaining gap** is that an append is still an append. Someone with
+database access can insert a one-sided `CREDIT` and the balance will follow —
+but it leaves a timestamped row, and the per-currency net stops being zero, so a
+reconciliation check finds it. That is the real difference between the two
+designs: a doctored projection is silent, a fraudulent append is **evident**.
+Hash-chaining entries per wallet would close it further, and is listed under
+*With more time*.
 
 ## Data model
 
@@ -342,7 +405,7 @@ erDiagram
     BALANCE {
         uuid   wallet_id PK
         string currency PK
-        bigint amount "minor units, >= 0"
+        bigint amount "derived from the ledger by trigger"
         bool   allow_negative "clearing accounts only"
     }
     TRANSACTION {
@@ -365,7 +428,7 @@ erDiagram
         string currency FK
         enum   direction "DEBIT | CREDIT"
         bigint amount "always positive"
-        bigint balance_after
+        bigint balance_after "set by trigger, not the caller"
     }
     IDEMPOTENCY_RECORD {
         string scope PK "POST /v1/transfers"
@@ -384,12 +447,17 @@ erDiagram
 
 Two tables carry the design:
 
-**`ledger_entries` is the source of truth.** Append-only, double-entry. Balances
-are a projection that must always equal the sum of a wallet's signed entries —
-asserted by test. Querying history over entries rather than transactions is what
-makes one transfer read as *sent* for the sender and *received* for the
-receiver without being stored twice, and makes a cross-currency swap show up as
-two statement rows (a debit and a credit) sharing one transaction id.
+**`ledger_entries` is the source of truth, and the application can only append
+to it.** Appending an entry is what moves money: a database trigger applies the
+delta to `balances` and fills in `balance_after` from the result. Nothing in the
+application is able to set a balance to an arbitrary value, so the projection
+cannot drift from the log — the same statement maintains both. See
+[Why balances is a projection the database owns](#why-balances-is-a-projection-the-database-owns).
+
+Querying history over entries rather than transactions is what makes one
+transfer read as *sent* for the sender and *received* for the receiver without
+being stored twice, and makes a cross-currency swap show up as two statement
+rows (a debit and a credit) sharing one transaction id.
 
 **`transaction_attempts` holds the failures.** `transactions` only ever contains
 committed money, which is what keeps the net-zero invariant provable. Failures
@@ -575,10 +643,10 @@ order still matters for two independent reasons: the debit is the only leg that
 can be *rejected*, so `INSUFFICIENT_FUNDS` surfaces before any FX work; and
 `balanceAfter` snapshots are only reproducible under a deterministic order.
 
-`LedgerService` is the only writer of `balances`, `ledger_entries` and
-`transactions`. Deposits, swaps and transfers describe themselves as a set of
-legs and hand them over, so none of the three contains a balance update and the
-locking logic exists exactly once. An unbalanced movement is refused outright.
+`LedgerService` is the only writer of `ledger_entries` and `transactions`.
+Deposits, swaps and transfers describe themselves as a set of legs and hand them
+over, so the locking logic exists exactly once. An unbalanced movement is refused
+outright. It never writes `balances` — see below.
 
 Proven by test: 20 simultaneous swaps → exactly 10 succeed, balance lands on
 exactly `0.00`; 16 opposing transfers complete with no deadlock and conserve
@@ -835,8 +903,12 @@ another.
   is a runtime check at one chokepoint.
 - **No fees, limits, KYC or sanctions screening.** A real remittance platform
   cannot ship without them.
-- **No reversals or refunds.** The ledger is append-only, so a correction would
-  be a compensating entry — the model supports it, the API does not expose it.
+- **No reversals or refunds.** The ledger is append-only — enforced by trigger,
+  not convention — so a correction is a compensating entry. The model supports
+  it; the API does not expose it.
+- **Append-only is not tamper-proof.** A one-sided entry inserted with database
+  access will move a balance. It is detectable (the per-currency net stops being
+  zero) but not prevented; hash chaining is the next step.
 - **`sort_order` insertion depth is ~100 midpoints** between the same two
   neighbours, since Prisma maps `Decimal` to `DECIMAL(65,30)`. Far beyond any
   realistic need, but not literally unbounded.
@@ -862,6 +934,11 @@ another.
    bites, and whether per-currency sharding of the clearing accounts is needed.
 8. **A `GET /wallets/all` admin surface** with its own role, which the current
    URI layout deliberately leaves room for.
+9. **Hash-chained ledger entries** — each entry carrying a digest of its
+   predecessor for that wallet, so an inserted or reordered entry breaks the
+   chain rather than merely unbalancing the books. Combined with a
+   least-privilege role, that is the point at which the log becomes genuinely
+   tamper-evident rather than tamper-detectable-by-reconciliation.
 
 ---
 

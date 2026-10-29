@@ -21,12 +21,24 @@ interface LockedBalance {
 }
 
 /**
- * The only writer of `balances`, `ledger_entries` and `transactions`.
+ * The only writer of `ledger_entries` and `transactions`.
  *
  * Deposits, swaps and transfers all describe themselves as a set of legs and
  * hand them here, so the locking, the ordering, the overdraft check and the
- * double-entry write exist exactly once. None of those three services contains a
- * balance update.
+ * double-entry write exist exactly once.
+ *
+ * ## It appends; it does not set balances
+ *
+ * This service never writes `balances`. Appending an entry is what moves money:
+ * a database trigger applies the delta and fills in `balance_after` from the
+ * result. Nothing in the application is able to set a balance to an arbitrary
+ * value, so the projection cannot drift from the log -- it is maintained by the
+ * same statement that appends to it.
+ *
+ * The balance row is still locked and read here, for two reasons the trigger
+ * cannot serve: the lock has to be taken over every row the movement touches
+ * *before* any decision is made on it, and an overdraft needs to surface as
+ * INSUFFICIENT_FUNDS with the figures rather than as a constraint violation.
  *
  * ## Why it is safe under concurrency
  *
@@ -60,8 +72,7 @@ export class LedgerService {
     const locked = await LedgerService.lockBalances(tx, legs);
 
     const transactionId = uuidv7();
-    const balancesAfter = new Map<string, bigint>();
-    const entries: Prisma.LedgerEntryCreateManyInput[] = [];
+    const projected = new Map<string, bigint>();
 
     for (const leg of legs) {
       const key = balanceKey(leg.walletId, leg.currency.code);
@@ -75,7 +86,7 @@ export class LedgerService {
         );
       }
 
-      const current = balancesAfter.get(key) ?? row.amount;
+      const current = projected.get(key) ?? row.amount;
       const next = leg.direction === 'DEBIT' ? current - leg.amount : current + leg.amount;
 
       if (next < 0n && !row.allow_negative) {
@@ -88,16 +99,7 @@ export class LedgerService {
         });
       }
 
-      balancesAfter.set(key, next);
-      entries.push({
-        id: uuidv7(),
-        transactionId,
-        walletId: leg.walletId,
-        currency: leg.currency.code,
-        direction: leg.direction,
-        amount: leg.amount,
-        balanceAfter: next,
-      });
+      projected.set(key, next);
     }
 
     const transaction = await tx.transaction.create({
@@ -117,16 +119,29 @@ export class LedgerService {
       },
     });
 
-    await tx.ledgerEntry.createMany({ data: entries });
-
-    // Balances are written last, from the already-computed projection, so the
-    // ledger is the thing that determines them rather than the reverse.
-    for (const [key, amount] of balancesAfter) {
-      const [walletId, currency] = LedgerService.splitKey(key);
-      await tx.balance.update({
-        where: { walletId_currency: { walletId, currency } },
-        data: { amount },
+    /*
+     * Appended one at a time, in the order the legs were sorted.
+     *
+     * `balance_after` is assigned by the trigger from the running balance, so
+     * the order entries are inserted in is the order they are applied in. A
+     * single multi-row INSERT would almost certainly behave the same way, but
+     * "almost certainly" is not a basis for a ledger -- sequential inserts make
+     * the sequence explicit. There are two to four of them per movement.
+     */
+    const balancesAfter = new Map<string, bigint>();
+    for (const leg of legs) {
+      const entry = await tx.ledgerEntry.create({
+        data: {
+          id: uuidv7(),
+          transactionId,
+          walletId: leg.walletId,
+          currency: leg.currency.code,
+          direction: leg.direction,
+          amount: leg.amount,
+        },
+        select: { walletId: true, currency: true, balanceAfter: true },
       });
+      balancesAfter.set(balanceKey(entry.walletId, entry.currency), entry.balanceAfter);
     }
 
     return { transactionId, createdAt: transaction.createdAt, balancesAfter };
@@ -210,11 +225,6 @@ export class LedgerService {
         );
       }
     }
-  }
-
-  private static splitKey(key: string): [string, string] {
-    const index = key.lastIndexOf(':');
-    return [key.slice(0, index), key.slice(index + 1)];
   }
 
   /** Maps our rate-source name onto the database enum. */

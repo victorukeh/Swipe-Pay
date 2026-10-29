@@ -179,6 +179,116 @@ describe('ledger invariants', () => {
     });
   });
 
+  /**
+   * The projection is maintained by the database, not by the application.
+   *
+   * These tests exist because the alternative design -- the application writing
+   * both the entry and the balance -- kept the balance in two places that had to
+   * agree by convention. An `UPDATE balances SET amount = ...` could set any
+   * value and leave nothing behind to say so. Now the only write the application
+   * can make is an append, and the balance follows from it.
+   *
+   * What this does not claim: it is not a defence against someone holding owner
+   * rights on the database, who can disable a trigger. It removes a class of
+   * application bug, blocks injected DML, and makes tampering evident.
+   */
+  describe('balances are derived, not set', () => {
+    it('refuses a direct change to a balance amount', async () => {
+      const wallet = await createWallet(h, 'derived');
+      await deposit(h, wallet, 'cNGN', '100.00');
+
+      await expect(
+        h.prisma.$executeRaw`
+          UPDATE "balances" SET "amount" = 999999999
+          WHERE "wallet_id" = ${wallet.id}::uuid AND "currency" = 'cNGN'
+        `,
+      ).rejects.toThrow(/derived from ledger_entries/);
+
+      expect((await balances(h, wallet))['cNGN']).toBe('100.00');
+    });
+
+    it('refuses to amend or delete a ledger entry', async () => {
+      const wallet = await createWallet(h, 'append-only');
+      await deposit(h, wallet, 'cNGN', '100.00');
+
+      // A correction is a compensating entry, which is an append like any other.
+      await expect(
+        h.prisma.$executeRaw`
+          UPDATE "ledger_entries" SET "amount" = 1 WHERE "wallet_id" = ${wallet.id}::uuid
+        `,
+      ).rejects.toThrow(/append-only/);
+
+      await expect(
+        h.prisma.$executeRaw`DELETE FROM "ledger_entries" WHERE "wallet_id" = ${wallet.id}::uuid`,
+      ).rejects.toThrow(/append-only/);
+    });
+
+    it('refuses a new balance row that already holds money', async () => {
+      const wallet = await createWallet(h, 'nonzero');
+
+      // Otherwise a wallet could start with a balance no entry accounts for,
+      // breaking the invariant from its very first row.
+      await expect(
+        h.prisma.$executeRaw`
+          INSERT INTO "balances" ("wallet_id", "currency", "amount", "allow_negative", "updated_at")
+          VALUES (${wallet.id}::uuid, 'cGHS', 50000, false, now())
+        `,
+      ).rejects.toThrow(/must start at 0/);
+    });
+
+    it('writes balance_after from the balance it computed, not from the caller', async () => {
+      const wallet = await createWallet(h, 'after');
+      await deposit(h, wallet, 'cNGN', '40.00');
+      await deposit(h, wallet, 'cNGN', '2.50');
+
+      const entries = await h.prisma.ledgerEntry.findMany({
+        where: { walletId: wallet.id, currency: 'cNGN' },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // The running balance is the database's own arithmetic, so it cannot
+      // disagree with the balance it claims to describe.
+      expect(entries.map((e) => e.balanceAfter)).toEqual([4000n, 4250n]);
+      const row = await h.prisma.balance.findUniqueOrThrow({
+        where: { walletId_currency: { walletId: wallet.id, currency: 'cNGN' } },
+      });
+      expect(row.amount).toBe(4250n);
+    });
+
+    it('moves money only as a consequence of an append', async () => {
+      const wallet = await createWallet(h, 'append-moves');
+      await deposit(h, wallet, 'cNGN', '10.00');
+      const txn = await h.prisma.transaction.findFirstOrThrow({
+        where: { sourceWalletId: wallet.id },
+      });
+
+      // Appending directly is possible -- it is the one write that is allowed --
+      // and the balance follows automatically. That is the point: a fraudulent
+      // movement has to leave a timestamped row behind, where the net-zero check
+      // will find it, rather than being an invisible edit.
+      await h.prisma.$executeRaw`
+        INSERT INTO "ledger_entries"
+          ("id", "transaction_id", "wallet_id", "currency", "direction", "amount", "created_at")
+        VALUES (gen_random_uuid(), ${txn.id}::uuid, ${wallet.id}::uuid, 'cNGN', 'CREDIT', 2500, now())
+      `;
+
+      expect((await balances(h, wallet))['cNGN']).toBe('35.00');
+
+      const net = await netByCurrency();
+      // And the books no longer balance, which is exactly how it gets caught.
+      expect(net.get('cNGN')).not.toBe(0n);
+
+      // Undo it the only legitimate way -- a compensating entry -- so the rest
+      // of the suite's invariant checks still hold.
+      await h.prisma.$executeRaw`
+        INSERT INTO "ledger_entries"
+          ("id", "transaction_id", "wallet_id", "currency", "direction", "amount", "created_at")
+        VALUES (gen_random_uuid(), ${txn.id}::uuid, ${wallet.id}::uuid, 'cNGN', 'DEBIT', 2500, now())
+      `;
+      expect((await balances(h, wallet))['cNGN']).toBe('10.00');
+    });
+  });
+
   describe('failed operations', () => {
     it('writes no ledger entry but does record the attempt', async () => {
       const wallet = await createWallet(h, 'failed');
