@@ -3,34 +3,11 @@ import { MoneyError } from './money.error';
 import type { ConversionResult } from './money.types';
 
 /**
- * All money arithmetic in Operation Borderless. Nothing else is allowed to do it.
- *
- * ## Why integers
- *
- * An amount is a `bigint` count of a currency's minor units — kobo for cNGN,
- * micro-dollars for USDx, whole francs for cXAF. There is no `number` and no
- * `Decimal` on any path that touches money, because IEEE-754 cannot represent
- * 0.1 and a decimal library still leaves the rounding policy implicit. Integers
- * make the policy explicit and the arithmetic exact.
- *
- * Amounts cross the API boundary as decimal *strings* for the same reason:
- * `JSON.parse('{"amount": 0.1}')` already has a float in it before any of our
- * code runs.
- *
- * ## Why rates are integers too
- *
- * A rate is stored scaled by `RATE_SCALE` (1e12), so "1 USD = 1612.45 NGN" is
- * the integer 1_612_450_000_000_000. Conversion is then a single exact
- * expression over integers with one explicitly chosen rounding step, rather than
- * a chain of floating-point multiplications.
- *
- * ## Rounding policy
- *
- * Conversions **floor** to the destination currency's precision. The discarded
- * part is always strictly less than one minor unit, and flooring guarantees the
- * system can never credit more value than it debited — it cannot mint money. The
- * dust accrues to the SYSTEM_FX clearing account, where it is auditable, rather
- * than vanishing.
+ * All money arithmetic in Operation Borderless. Nothing else is allowed to do
+ * it. Amounts are `bigint` minor units (no `number`, no `Decimal`); rates are
+ * integers scaled by `RATE_SCALE`; conversions floor so the system can never
+ * credit more than it debited, with the dust accruing to SYSTEM_FX. See the
+ * README's "Money precision" section for the full rationale.
  */
 export class MoneyUtil {
   /** Decimal places of precision kept in a stored FX rate. */
@@ -52,13 +29,9 @@ export class MoneyUtil {
   // ---------------------------------------------------------------------------
 
   /**
-   * Turn a client-supplied decimal string into minor units.
-   *
-   * Rejects anything that isn't an unsigned decimal literal — no exponents, no
-   * signs, no whitespace, no thousands separators — and rejects more fraction
-   * digits than the currency admits rather than rounding silently. "100.50 cXAF"
-   * is not a representable amount (the CFA franc has no subunit), so it is an
-   * error, not 100 or 101.
+   * Parses a client decimal string into minor units. Rejects anything that
+   * isn't an unsigned decimal literal, and rejects more fraction digits than
+   * the currency admits rather than rounding silently.
    */
   static toMinorUnits(input: string, currency: MoneyScale): bigint {
     if (typeof input !== 'string') {
@@ -103,13 +76,7 @@ export class MoneyUtil {
     return minor;
   }
 
-  /**
-   * Render minor units as a fixed-precision decimal string.
-   *
-   * Always emits exactly the currency's number of decimal places, so "1 USDx"
-   * reads as "1.000000". A fixed width removes any ambiguity about what
-   * precision the value is being asserted at.
-   */
+  /** Renders minor units as a decimal string at exactly the currency's precision. */
   static toDecimalString(minor: bigint, currency: MoneyScale): string {
     const scale = currency.decimals;
     const negative = minor < 0n;
@@ -130,11 +97,9 @@ export class MoneyUtil {
   // ---------------------------------------------------------------------------
 
   /**
-   * Parse a rate into RATE_SCALE units, rounding half-up at the 12th decimal.
-   *
-   * Unlike an amount, extra precision in a rate is not a client error — upstream
-   * providers publish however many digits they like — so it is rounded rather
-   * than rejected.
+   * Parses a rate into RATE_SCALE units, rounding half-up at the 12th
+   * decimal. Unlike an amount, extra precision in a rate is rounded rather
+   * than rejected -- providers publish however many digits they like.
    */
   static rateFromString(input: string): bigint {
     const raw = input.trim();
@@ -161,12 +126,9 @@ export class MoneyUtil {
   }
 
   /**
-   * Convert a provider-supplied JSON number into an exact scaled integer.
-   *
-   * This is the single point in the system where a floating-point value is
-   * admitted, and it is converted immediately. `toFixed` is used rather than
-   * `String()` so that values the provider sends in exponential form ("1e-7")
-   * still land as plain decimals.
+   * Converts a provider-supplied JSON number into an exact scaled integer --
+   * the one point where a float is admitted, converted immediately via
+   * `toFixed` so exponential-form values ("1e-7") still land as plain decimals.
    */
   static rateFromNumber(value: number): bigint {
     if (!Number.isFinite(value) || value <= 0) {
@@ -187,12 +149,8 @@ export class MoneyUtil {
   }
 
   /**
-   * Derive the A -> B rate from two rates quoted against a common base.
-   *
-   * Upstream publishes "units of X per 1 USD", so the cross rate is
-   * perUsd[B] / perUsd[A]. Computed as one integer division on values already
-   * scaled by RATE_SCALE, which keeps the full precision of both inputs rather
-   * than compounding two roundings.
+   * Derives the A -> B rate from two rates quoted against a common base
+   * (perUsd[B] / perUsd[A]) as one integer division, avoiding two compounded roundings.
    */
   static crossRateViaUsd(perUsdFromScaled: bigint, perUsdToScaled: bigint): bigint {
     if (perUsdFromScaled <= 0n || perUsdToScaled <= 0n) {
@@ -209,19 +167,10 @@ export class MoneyUtil {
   // ---------------------------------------------------------------------------
 
   /**
-   * Convert an amount between currencies at a given scaled rate.
-   *
-   * The whole calculation is one exact rational, evaluated with a single
-   * explicit floor at the end:
-   *
-   *   numerator   = amount x rateScaled x 10^destScale
-   *   denominator = RATE_SCALE x 10^sourceScale
-   *   result      = floor(numerator / denominator)
-   *
-   * `remainder` is the discarded part expressed over `denominator`, so
-   * `remainder / denominator` is the fraction of one destination minor unit that
-   * was dropped — always strictly less than 1. It is returned rather than hidden
-   * so callers can record it.
+   * Converts an amount between currencies at a given scaled rate: one exact
+   * rational (`amount * rateScaled * 10^destScale / (RATE_SCALE * 10^sourceScale)`)
+   * with a single explicit floor. `remainder` is the discarded fraction
+   * (always < 1 destination minor unit), returned rather than hidden.
    */
   static convert(params: {
     amount: bigint;
@@ -258,12 +207,7 @@ export class MoneyUtil {
     return { amount: converted, remainder, denominator, exact: remainder === 0n };
   }
 
-  /**
-   * Total a set of balances in USDx.
-   *
-   * Each leg is floored independently, which is the conservative direction: a
-   * reported total is never higher than the true one.
-   */
+  /** Totals a set of balances in USDx. Each leg floors independently, so the total is never reported higher than true. */
   static totalInUsd<T extends MoneyScale>(
     balances: ReadonlyArray<{ currency: T; amount: bigint }>,
     rateTo: (from: T) => bigint,

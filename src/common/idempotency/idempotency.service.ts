@@ -12,14 +12,11 @@ export interface ReplayedResponse {
 }
 
 /**
- * Idempotency for the three money-moving endpoints.
- *
- * The claim is inserted **inside the operation's own database transaction**,
- * which is the whole design. A key claimed anywhere else — Redis, or a separate
- * transaction — could outlive a rollback and permanently poison the operation:
- * the client would retry forever and get a conflict every time, with no money
- * ever having moved. A unique constraint on (scope, key) in the same transaction
- * as the ledger write cannot drift from it.
+ * Idempotency for the three money-moving endpoints. The claim is inserted
+ * **inside the operation's own database transaction** -- claimed anywhere
+ * else (Redis, a separate transaction) it could outlive a rollback and
+ * permanently poison the operation, since a unique constraint in the same
+ * transaction as the ledger write cannot drift from it.
  */
 @Injectable()
 export class IdempotencyService {
@@ -38,17 +35,10 @@ export class IdempotencyService {
     tx: PrismaTx,
     params: { scope: string; key: string; walletId: string; requestHash: string },
   ): Promise<ReplayedResponse | null> {
-    /*
-     * INSERT ... ON CONFLICT DO NOTHING, not insert-and-catch.
-     *
-     * In PostgreSQL a statement that raises inside a transaction puts the whole
-     * transaction into an aborted state: every subsequent statement fails with
-     * "current transaction is aborted" until a rollback. So catching the unique
-     * violation and then reading the existing record cannot work here -- the
-     * read is already doomed. (It would need a SAVEPOINT, which Prisma does not
-     * expose.) `skipDuplicates` turns the conflict into a row count instead of
-     * an error, which keeps the transaction usable and is simpler besides.
-     */
+    // INSERT ... ON CONFLICT DO NOTHING, not insert-and-catch: a raised unique
+    // violation aborts the whole PostgreSQL transaction, so reading the
+    // existing record afterwards would already be doomed. `skipDuplicates`
+    // turns the conflict into a row count instead.
     const { count } = await tx.idempotencyRecord.createMany({
       data: [
         {
@@ -87,12 +77,8 @@ export class IdempotencyService {
     }
 
     if (existing.state === 'FAILED') {
-      /*
-       * The original attempt failed deterministically. Re-raise the stored
-       * error rather than returning it as a body, so the response goes through
-       * the normal exception filter and carries this request's own id. The
-       * client sees the identical code and details it saw the first time.
-       */
+      // Re-raise the stored error through the normal exception filter, so
+      // this request's own id is attached but the code and details match.
       throw AppError.fromStoredFailure({
         status: existing.responseStatus ?? 422,
         body: existing.responseBody,
@@ -128,21 +114,11 @@ export class IdempotencyService {
   }
 
   /**
-   * Settles a key after the operation's transaction has rolled back.
-   *
-   * This is where the retryable distinction is spent, and getting it backwards
-   * is costly in both directions:
-   *
-   *  - A deterministic failure (INSUFFICIENT_FUNDS, SELF_TRANSFER) will fail
-   *    identically on retry, so the key is re-claimed with the stored error and
-   *    replayed. The client gets a stable answer instead of a different one each
-   *    time.
-   *  - A transient failure (the FX provider timed out, the database blipped)
-   *    might well succeed on retry, so the key is left released. Consuming it
-   *    would poison the operation permanently.
-   *
-   * Runs on a fresh connection, because the transaction that would have carried
-   * this write has already been rolled back.
+   * Settles a key after the operation's transaction has rolled back. A
+   * deterministic failure (INSUFFICIENT_FUNDS, ...) is stored and replayed on
+   * retry, since it would fail identically again; a transient one (FX
+   * timeout, DB blip) is left released so a retry can succeed. Runs on a
+   * fresh connection, since the original transaction is already gone.
    */
   async settleFailure(params: {
     scope: string;

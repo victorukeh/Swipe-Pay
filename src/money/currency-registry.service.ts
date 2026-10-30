@@ -6,22 +6,12 @@ import type { CurrencyCode, CurrencyMeta } from './currency.types';
 import { USD_CURRENCY_CODE } from './currency.types';
 
 /**
- * The `currencies` table, read once at boot and held in memory.
- *
- * The table is the sole authority for which stablecoins exist and what precision
- * each admits, so adding one is an INSERT plus a restart rather than a release.
- * It is cached because every deposit, swap and transfer needs a currency's
- * precision, and that must not become a database round trip inside a
- * transaction that is already holding row locks.
- *
- * Two consequences of this design are deliberate and worth being explicit about:
- *
- *  - An unknown currency code is a runtime rejection (`UNSUPPORTED_CURRENCY`,
- *    422) rather than a compile error, because the valid set is not known to the
- *    type system. `require()` is the single chokepoint for that check.
- *  - A currency added while the process is running is not visible until
- *    `refresh()` runs. `GET /currencies` reads through the cache, and the health
- *    endpoint reports the loaded count, so a stale process is observable.
+ * The `currencies` table, read once at boot and held in memory -- cached
+ * because every deposit, swap and transfer needs a currency's precision,
+ * and that must not become a DB round trip inside a transaction already
+ * holding row locks. An unknown code is a runtime 422
+ * (`require()` is the chokepoint); a currency added while the process is
+ * running isn't visible until `refresh()`.
  */
 @Injectable()
 export class CurrencyRegistry implements OnModuleInit {
@@ -68,18 +58,13 @@ export class CurrencyRegistry implements OnModuleInit {
       }
     }
 
-    // One guard covers the whole family of misconfigurations, because an active
-    // USDx implies a non-empty table and at least one currency money can move
-    // in. It also makes `usd()` non-throwing, which every wallet total relies on.
+    // An active USDx implies a non-empty, usable table, and keeps `usd()`
+    // non-throwing. Logged (not returned to a client) since it names our
+    // schema and tooling; AppError.internal still aborts startup here.
     const usd = byCode.get(USD_CURRENCY_CODE);
     if (!usd?.isActive) {
       const detail = `The currencies table must contain an active ${USD_CURRENCY_CODE}; wallet totals are denominated in it. Run \`yarn db:seed\` to load prisma/seeds/currencies.json.`;
-      // The remediation belongs in the log, not in the response: a client can do
-      // nothing with it, and it names our schema and tooling.
       this.logger.error(detail);
-      // AppError.internal keeps this on one path with every other failure — the
-      // client gets the generic INTERNAL_ERROR envelope from AllExceptionsFilter.
-      // At boot it still aborts startup, which is the behaviour we want there.
       throw AppError.internal(new Error(detail));
     }
 

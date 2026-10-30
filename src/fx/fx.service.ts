@@ -25,18 +25,12 @@ interface CachedTable {
 }
 
 /**
- * Resolves FX rates through a chain of providers, degrading rather than failing.
- *
- *   Redis cache -> live provider -> Postgres last-known-good -> static table
- *
- * The providers are injected as an ordered array behind the FxRateProvider
- * interface, so the service never names a concrete provider and a new source is
- * added by registering a class. The only concrete dependency is
- * SnapshotFxProvider, and only to *write* to it after a successful live fetch.
- *
- * Every result carries `source` and `asOf`, which are recorded on the
- * transaction and returned by GET /rates. A caller is always able to tell
- * whether their conversion used a live rate or a degraded one.
+ * Resolves FX rates through a chain of providers, degrading rather than
+ * failing: Redis cache -> live provider -> Postgres last-known-good ->
+ * static table. Providers are injected as an ordered array behind
+ * `FxRateProvider`, so a new source is added by registering a class. Every
+ * result carries `source` and `asOf`, recorded on the transaction and
+ * returned by GET /rates.
  */
 @Injectable()
 export class FxService {

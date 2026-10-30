@@ -1,16 +1,10 @@
 // Operation Borderless data model.
 //
-// Two rules shape everything below:
-//
-//  1. Money is an integer. Every amount is a BigInt count of a currency's minor
-//     units (kobo, pesewa, micro-dollar...). There is no Decimal and no Float
-//     anywhere in this schema, so no rounding can be introduced by storage.
-//
-//  2. The ledger is append-only and double-entry. `balances` is a projection
-//     that must always equal the sum of a wallet's signed `ledger_entries`;
-//     `transactions` and `ledger_entries` only ever contain committed, successful
-//     money. Failed attempts live in `transaction_attempts` instead, so the
-//     ledger invariant stays provable.
+// Two rules shape everything below: money is a BigInt count of minor units
+// (no Decimal, no Float, anywhere), and the ledger is append-only and
+// double-entry -- `balances` is a projection that must always equal the sum
+// of a wallet's signed `ledger_entries`, and `transactions` only ever
+// contains committed money (failures live in `transaction_attempts`).
 
 generator client {
   provider = "prisma-client-js"
@@ -21,45 +15,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// The supported mock stablecoins — the sole authority for which currencies
-/// exist and what precision each admits.
-///
-/// Deliberately a table rather than an enum plus a code constant, so a new
-/// stablecoin is an INSERT and not a release. The trade-off is explicit: the
-/// currency code is no longer a TypeScript literal union, so the compiler can no
-/// longer prove a switch is exhaustive, and validation moved to runtime against
-/// this table (see CurrencyRegistry).
-///
-/// `decimals` is the dangerous column. Changing it reinterprets every amount
-/// already stored — 123456 kobo would stop meaning 1234.56 and start meaning
-/// 123.456 — so a trigger added in the migration refuses to change it on any
-/// currency that already has balances or ledger entries behind it. New
-/// currencies stay freely editable until first use.
+/// The supported mock stablecoins, and the sole authority for which ones
+/// exist. A table rather than an enum, so a new stablecoin is an INSERT and
+/// not a release -- at the cost of compile-time exhaustiveness, pushed to a
+/// runtime check in CurrencyRegistry.
 model Currency {
-  /// Ticker as clients send it, e.g. "cNGN". Primary key, and the FK target for
-  /// every money column in the schema.
+  /// Ticker as clients send it, e.g. "cNGN".
   code      String  @id
   /// ISO-4217 code of the fiat currency this stablecoin tracks 1:1.
   peg       String
-  /// Decimal places admitted. 2 for cNGN, 0 for cXAF (the CFA franc has no
-  /// subunit in circulation), 6 for USDx.
+  /// Decimal places admitted (0 for cXAF, 6 for USDx). Immutable once any
+  /// balance or ledger entry references the currency -- enforced by trigger,
+  /// since changing it would silently reinterpret every amount stored.
   decimals  Int
   name      String
   /// Display name of the smallest unit, e.g. "kobo".
   minorUnit String  @map("minor_unit")
   /// Lets a currency be withdrawn from new operations without deleting history.
   isActive  Boolean @default(true) @map("is_active")
-  /// Controls ordering in GET /currencies and in the rate matrix.
-  ///
-  /// A fractional index rather than a counter, so a new currency can be slotted
-  /// between two existing ones without renumbering anything:
-  /// `sort_order = (left + right) / 2`.
-  ///
-  /// NUMERIC, emphatically not a float. Exact decimal arithmetic is what makes
-  /// repeated midpoint insertion safe; with DOUBLE PRECISION the midpoints would
-  /// converge on the precision limit until two keys compared equal and the
-  /// ordering went non-deterministic - the same failure mode this codebase
-  /// avoids for money, with a cheaper blast radius.
+  /// Fractional index controlling display order, so a new currency slots in
+  /// at `(left + right) / 2` without renumbering. NUMERIC, not float -- a
+  /// float midpoint eventually collides and ordering goes non-deterministic.
   sortOrder Decimal @default(0) @map("sort_order")
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -85,9 +61,8 @@ enum LedgerDirection {
   CREDIT
 }
 
-/// Why a given rate was used. Surfaced on every transaction and on GET /rates so
-/// a caller can always tell whether their conversion used a live rate or a
-/// degraded one.
+/// Which tier priced a transaction. Surfaced on every transaction and on
+/// GET /rates, so a caller can tell a live rate from a degraded one.
 enum RateSource {
   LIVE /// freshly fetched from the upstream provider
   CACHED /// served from Redis within its TTL
@@ -107,15 +82,13 @@ enum IdempotencyState {
   FAILED
 }
 
-/// A virtual multi-currency wallet. Identified by email or mobile number — at
-/// least one is required and neither may be reused (enforced by unique indexes
-/// below, not by application code).
+/// A virtual multi-currency wallet, identified by email or phone -- at least
+/// one is required and neither may be reused (unique indexes below).
 model Wallet {
   id        String   @id @db.Uuid
   email     String?  @unique
   phone     String?  @unique
-  /// Internal wallets (currently only SYSTEM_ROUNDING) are excluded from the
-  /// public API and cannot be authenticated against.
+  /// Internal clearing accounts are excluded from the public API.
   isSystem  Boolean  @default(false) @map("is_system")
   /// Stable handle for internal wallets so a seed is idempotent.
   systemKey String?  @unique @map("system_key")
@@ -132,9 +105,7 @@ model Wallet {
   @@map("wallets")
 }
 
-/// Split out of Wallet deliberately: a wallet is a money container, a credential
-/// is an authentication artefact. Keeping them apart means no balance query ever
-/// loads a password hash.
+/// Split out of Wallet so no balance query ever loads a password hash.
 model Credential {
   walletId     String   @id @map("wallet_id") @db.Uuid
   passwordHash String   @map("password_hash")
@@ -147,19 +118,16 @@ model Credential {
   @@map("credentials")
 }
 
-/// One row per (wallet, currency). This is the row that gets SELECT ... FOR UPDATE
-/// locked during every money movement, in a deterministic order, so concurrent
-/// debits cannot overdraw and two opposing transfers cannot deadlock.
+/// One row per (wallet, currency) -- the row `SELECT ... FOR UPDATE` locks
+/// during a money movement, in deterministic order, so concurrent debits
+/// cannot overdraw and opposing transfers cannot deadlock.
 model Balance {
   walletId      String   @map("wallet_id") @db.Uuid
   currency      String
-  /// Minor units. Never negative for customer wallets — guarded in the
-  /// application and by a CHECK constraint added in the migration.
+  /// Minor units. Never negative for customer wallets (app check + CHECK constraint).
   amount        BigInt   @default(0)
-  /// True only for internal clearing accounts. A clearing account legitimately
-  /// carries a negative (credit) position: SYSTEM_MINT goes negative by the total
-  /// supply it has issued, and SYSTEM_FX goes negative in whichever currency it is
-  /// currently paying out. Customer balances are never allowed to.
+  /// True only for clearing accounts, which legitimately run negative
+  /// (SYSTEM_MINT by total issued supply, SYSTEM_FX by whatever it's paying out).
   allowNegative Boolean  @default(false) @map("allow_negative")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -171,16 +139,14 @@ model Balance {
   @@map("balances")
 }
 
-/// A committed money movement. Contains everything the brief asks a transfer to
-/// record: sender, receiver, source amount and currency, destination amount and
-/// currency, the rate applied and a timestamp.
+/// A committed money movement: sender, receiver, source/dest amount and
+/// currency, the rate applied, and a timestamp.
 model Transaction {
   id String @id @db.Uuid
 
   type TransactionType
 
-  /// For a DEPOSIT this is the credited wallet and `sourceAmount` equals
-  /// `destAmount`. For a SWAP source and destination are the same wallet.
+  /// For a DEPOSIT this is the credited wallet. For a SWAP, source == dest.
   sourceWalletId String  @map("source_wallet_id") @db.Uuid
   destWalletId   String? @map("dest_wallet_id") @db.Uuid
 
@@ -189,11 +155,9 @@ model Transaction {
   destCurrency   String @map("dest_currency")
   destAmount     BigInt @map("dest_amount")
 
-  /// The applied rate, scaled by MoneyUtil.RATE_SCALE (1e12), as an integer.
-  /// 1 USD = 1612.45 NGN is stored as 1612450000000000.
+  /// Scaled by MoneyUtil.RATE_SCALE (1e12): 1 USD = 1612.45 NGN -> 1612450000000000.
   rateScaled BigInt     @map("rate_scaled")
   rateSource RateSource @map("rate_source")
-  /// When the rate used here was last refreshed upstream.
   rateAsOf   DateTime   @map("rate_as_of")
 
   idempotencyKey String?  @map("idempotency_key")
@@ -212,21 +176,12 @@ model Transaction {
   @@map("transactions")
 }
 
-/// Double-entry, append-only.
-///
-/// Every transaction writes balanced pairs, so the signed sum of all entries in
-/// any one currency is exactly zero — including deposits and cross-currency
-/// conversions, which is only possible because the counter-leg goes to an
-/// internal clearing account:
-///
-///   DEPOSIT              SYSTEM_MINT debit  -> user credit
-///   TRANSFER (same ccy)  sender debit       -> receiver credit
-///   SWAP / TRANSFER      user debit (src)   -> SYSTEM_FX credit (src)
-///   (cross-currency)     SYSTEM_FX debit (dst) -> receiver credit (dst)
-///
-/// A wallet's history is a query over this table, which is why a single transfer
-/// row reads correctly as "sent" for one wallet and "received" for the other
-/// without being duplicated.
+/// Double-entry, append-only: every transaction writes balanced pairs, so
+/// the signed sum per currency is always zero, with clearing accounts as
+/// the counterparty for deposits and cross-currency legs. Querying history
+/// over entries (not transactions) is what makes one transfer read as
+/// "sent" for the sender and "received" for the receiver without
+/// duplication.
 model LedgerEntry {
   id            String          @id @db.Uuid
   transactionId String          @map("transaction_id") @db.Uuid
@@ -235,13 +190,8 @@ model LedgerEntry {
   direction     LedgerDirection
   /// Always positive; `direction` carries the sign.
   amount        BigInt
-  /// The wallet's balance in this currency immediately after this entry was
-  /// applied. Makes the ledger auditable without replaying it from zero.
-  ///
-  /// Assigned by the `ledger_entries_apply_to_balance` trigger from the balance
-  /// it just computed, never by the caller -- so it cannot disagree with the
-  /// balance it claims to describe. The default exists only so the ORM treats
-  /// the column as optional on insert; the trigger overwrites it.
+  /// Balance immediately after this entry, assigned by the
+  /// `ledger_entries_apply_to_balance` trigger -- never by the caller.
   balanceAfter  BigInt          @default(0) @map("balance_after")
   createdAt     DateTime        @default(now()) @map("created_at")
 
@@ -255,22 +205,18 @@ model LedgerEntry {
   @@map("ledger_entries")
 }
 
-/// Append-only attempt log. Written on a separate connection *after* a failed
-/// operation has rolled back, because a row inserted inside the doomed
-/// transaction would disappear with it. Successful attempts are recorded too, so
-/// this is a complete audit trail rather than just a failure log.
+/// Append-only attempt log, successes and failures both. A failed attempt is
+/// written on a fresh connection after rollback, since a row inside the
+/// doomed transaction would disappear with it.
 model TransactionAttempt {
   id             String          @id @db.Uuid
   walletId       String          @map("wallet_id") @db.Uuid
   type           TransactionType
   outcome        AttemptOutcome
-  /// SHA-256 of the canonicalised request body. Lets an operator see that two
-  /// attempts were the same request without storing the request itself.
+  /// SHA-256 of the canonicalised request body.
   requestHash    String          @map("request_hash")
   idempotencyKey String?         @map("idempotency_key")
-  /// Set when the attempt succeeded.
   transactionId  String?         @map("transaction_id") @db.Uuid
-  /// Set when it failed, e.g. INSUFFICIENT_FUNDS.
   errorCode      String?         @map("error_code")
   errorMessage   String?         @map("error_message")
   /// Correlation id echoed to the client in the error envelope.
@@ -285,26 +231,24 @@ model TransactionAttempt {
   @@map("transaction_attempts")
 }
 
-/// Idempotency lives in Postgres rather than Redis because the claim has to be
-/// transactional with the ledger write — a key claimed in Redis could survive a
-/// database rollback and permanently poison the operation.
+/// In Postgres, not Redis: the claim must be transactional with the ledger
+/// write, or a key claimed outside it could outlive a rollback and poison
+/// the operation permanently.
 model IdempotencyRecord {
-  /// Route-level namespace, e.g. "POST /v1/transfers". The same key may be used
-  /// on two different endpoints without colliding.
+  /// Route-level namespace, e.g. "POST /v1/transfers".
   scope String
   key   String
 
   walletId String @map("wallet_id") @db.Uuid
 
-  /// SHA-256 of the canonicalised request body. A replay with the same key but a
-  /// different body is a client bug and is rejected, not silently served.
+  /// SHA-256 of the canonicalised body. A replay with a different body is
+  /// rejected, not silently served.
   requestHash String @map("request_hash")
 
   state IdempotencyState
 
-  /// The original response, replayed verbatim on retry. Stored for successes and
-  /// for deterministic 4xx failures (which would fail identically anyway); never
-  /// for transient 5xx failures, where the key is released so a retry can work.
+  /// Replayed verbatim on retry. Stored for successes and deterministic 4xx
+  /// failures; never for transient 5xx, where the key is released instead.
   responseStatus Int?    @map("response_status")
   responseBody   Json?   @map("response_body")
   transactionId  String? @map("transaction_id") @db.Uuid
@@ -317,13 +261,11 @@ model IdempotencyRecord {
   @@map("idempotency_records")
 }
 
-/// Last-known-good FX rates, persisted so a provider outage survives a restart.
-/// Redis is only a TTL cache in front of this; if Redis is empty and the provider
-/// is down, these rows are what keep swaps and transfers working.
+/// Last-known-good FX rates, so a provider outage survives a restart. Redis
+/// is only a TTL cache in front of this.
 model FxRateSnapshot {
   base       String
   quote      String
-  /// Scaled by MoneyUtil.RATE_SCALE (1e12).
   rateScaled BigInt   @map("rate_scaled")
   source     String
   fetchedAt  DateTime @map("fetched_at")

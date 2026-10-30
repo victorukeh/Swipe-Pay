@@ -21,42 +21,26 @@ interface LockedBalance {
 }
 
 /**
- * The only writer of `ledger_entries` and `transactions`.
+ * The only writer of `ledger_entries` and `transactions`. Deposits, swaps and
+ * transfers describe themselves as a set of legs and hand them here, so the
+ * locking, ordering, overdraft check and double-entry write exist exactly
+ * once.
  *
- * Deposits, swaps and transfers all describe themselves as a set of legs and
- * hand them here, so the locking, the ordering, the overdraft check and the
- * double-entry write exist exactly once.
+ * It never writes `balances` directly -- a trigger derives that from the
+ * entries this appends. The row is still locked and read here because the
+ * lock must be taken over every touched row before any decision is made, and
+ * an overdraft needs to surface as INSUFFICIENT_FUNDS with figures rather
+ * than a bare constraint violation.
  *
- * ## It appends; it does not set balances
+ * Safety under concurrency: every affected balance row is taken with
+ * `SELECT ... FOR UPDATE` ordered by `(wallet_id, currency)` before anything
+ * is read, inside the caller's transaction -- so concurrent movements on the
+ * same rows serialise behind the lock, and opposing transfers (A->B, B->A)
+ * can't deadlock since both lock in the same order.
  *
- * This service never writes `balances`. Appending an entry is what moves money:
- * a database trigger applies the delta and fills in `balance_after` from the
- * result. Nothing in the application is able to set a balance to an arbitrary
- * value, so the projection cannot drift from the log -- it is maintained by the
- * same statement that appends to it.
- *
- * The balance row is still locked and read here, for two reasons the trigger
- * cannot serve: the lock has to be taken over every row the movement touches
- * *before* any decision is made on it, and an overdraft needs to surface as
- * INSUFFICIENT_FUNDS with the figures rather than as a constraint violation.
- *
- * ## Why it is safe under concurrency
- *
- * Everything happens in one transaction supplied by the caller, and the affected
- * balance rows are taken with `SELECT ... FOR UPDATE` **ordered by
- * (wallet_id, currency)** before anything is read for a decision. Two concurrent
- * movements touching the same rows therefore serialise behind the lock rather
- * than both reading a stale balance, and two opposing transfers (A to B, B to A)
- * cannot deadlock because both acquire their locks in the same order.
- *
- * ## Why the debit leg goes first
- *
- * Atomicity comes from the transaction boundary, not from leg order: if the
- * credit fails the debit rolls back, so there is no state in which money has
- * left the sender and not arrived. The order still matters for two other
- * reasons. The debit is the only leg that can be *rejected*, so applying it
- * first means INSUFFICIENT_FUNDS surfaces before any further work; and
- * `balanceAfter` snapshots are only reproducible under a deterministic order.
+ * Debit before credit: atomicity is the transaction boundary's job, not leg
+ * order, but applying the debit first makes INSUFFICIENT_FUNDS surface
+ * before any further work, and keeps `balanceAfter` reproducible.
  */
 @Injectable()
 export class LedgerService {

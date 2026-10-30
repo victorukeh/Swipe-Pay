@@ -24,17 +24,14 @@ export interface OperationResult<T> {
 }
 
 /**
- * The shared spine of every money-moving endpoint.
+ * The shared spine of every money-moving endpoint: claiming the idempotency
+ * key, running inside one transaction, recording the attempt, and settling
+ * the key on failure, all exactly once. Deposit, swap and transfer differ
+ * only in which legs they produce.
  *
- * Deposit, swap and transfer differ only in which legs they produce. Everything
- * around that — claiming the idempotency key, running inside one transaction,
- * recording the attempt, and settling the key correctly when it fails — lives
- * here once, so none of the three can get a corner of it wrong.
- *
- * Note what is *not* inside the transaction: FX resolution. A rate lookup can
- * make a network call, and holding a transaction open across one would pin a
- * connection and hold row locks for the duration of someone else's outage. The
- * operation services resolve their rate first and pass the result in.
+ * FX resolution is deliberately *not* inside the transaction -- a rate
+ * lookup can make a network call, and holding row locks across someone
+ * else's outage would be indefensible. Callers resolve their rate first.
  */
 @Injectable()
 export class OperationRunner {
@@ -99,12 +96,9 @@ export class OperationRunner {
 
   /**
    * Everything that has to happen after the transaction has rolled back.
-   *
-   * Both writes go out on a fresh connection, because a row inserted inside the
-   * doomed transaction would have disappeared with it — which is exactly why
-   * failures are audited in `transaction_attempts` rather than as a status on
-   * `transactions`. That keeps "the signed sum of every ledger entry in a
-   * currency is zero" provable over a table that only ever holds committed money.
+   * Both writes go out on a fresh connection -- a row inside the doomed
+   * transaction would have disappeared with it, which is why failures are
+   * audited in `transaction_attempts` rather than as a status on `transactions`.
    */
   private async recordFailure(ctx: OperationContext, error: unknown): Promise<void> {
     const appError = toAppError(error);

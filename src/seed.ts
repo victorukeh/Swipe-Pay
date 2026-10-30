@@ -5,21 +5,10 @@ import { PrismaClient } from '@prisma/client';
 import { v7 as uuidv7 } from 'uuid';
 
 /**
- * Clearing accounts.
- *
- * Double-entry needs somewhere for the counter-leg of a movement that has no
- * other wallet on the far side:
- *
- *  - SYSTEM_MINT is the external world. A deposit debits it, so the total supply
- *    this sandbox has issued is auditable as that account's position.
- *  - SYSTEM_FX takes both sides of a conversion: it is credited the source
- *    currency and debited the destination currency. This is what makes "the
- *    signed sum of every ledger entry in a currency is zero" hold even for
- *    cross-currency movements, and it is where the sub-minor-unit rounding dust
- *    accrues rather than vanishing.
- *
- * Both legitimately hold negative positions, which is why their balance rows
- * carry allow_negative.
+ * Clearing accounts: the counter-leg for a movement with no wallet on the
+ * far side. SYSTEM_MINT is the external world (debited on deposit);
+ * SYSTEM_FX takes both sides of a conversion, keeping each currency's
+ * signed sum at zero. Both legitimately run negative (allow_negative).
  */
 export const SYSTEM_MINT_KEY = 'SYSTEM_MINT';
 export const SYSTEM_FX_KEY = 'SYSTEM_FX';
@@ -31,25 +20,11 @@ interface CurrencySeed {
   decimals: number;
   name: string;
   minorUnit: string;
-  /**
-   * Fractional index, as a string.
-   *
-   * A string in the JSON on purpose: JSON numbers are IEEE-754 doubles, so
-   * writing 0.1 here and letting the parser produce 0.1000000000000000055 would
-   * defeat the point of the column being NUMERIC. Prisma accepts a string for a
-   * Decimal field and stores it exactly.
-   */
+  /** Fractional index, as a string -- a JSON number would re-introduce float error into a NUMERIC column. */
   sortOrder: string;
 }
 
-/**
- * Resolved from the working directory, not from __dirname.
- *
- * The same file has to be found whether this runs as TypeScript from the repo
- * root in development or as compiled JavaScript from /app in the container,
- * where __dirname is /app/dist. The working directory is the project root in
- * both cases.
- */
+/** Resolved from the working directory (project root in both dev and the container), not __dirname. */
 function loadCurrencies(): CurrencySeed[] {
   const file =
     process.env.CURRENCY_SEED_FILE ?? join(process.cwd(), 'prisma', 'seeds', 'currencies.json');
@@ -57,14 +32,9 @@ function loadCurrencies(): CurrencySeed[] {
 }
 
 /**
- * Seeding currencies is an upsert that deliberately leaves `decimals` alone on
- * rows that already exist.
- *
- * Re-running the seed must never change the precision of a currency that already
- * has money behind it — the database trigger would refuse it anyway, but the
- * seed should not even try. New currencies are added by editing
- * prisma/seeds/currencies.json; changing an existing currency's precision is not
- * a seed operation.
+ * Upserts currencies, deliberately leaving `decimals` alone on existing rows
+ * -- the trigger would refuse a precision change anyway, but the seed
+ * shouldn't even try.
  */
 async function seedCurrencies(prisma: PrismaClient, log: boolean): Promise<string[]> {
   const seeds = loadCurrencies();

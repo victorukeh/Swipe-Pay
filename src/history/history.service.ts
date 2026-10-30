@@ -41,14 +41,10 @@ export class HistoryService {
   ) {}
 
   /**
-   * A wallet's statement, newest first.
-   *
-   * Queried over `ledger_entries` rather than `transactions`, which is what
-   * makes a single transfer read correctly as *sent* for one wallet and
-   * *received* for the other without being stored twice. It also means a
-   * cross-currency swap appears as two rows in one wallet's statement — a debit
-   * in the source currency and a credit in the destination — which is what a
-   * statement should show, and what makes filtering by currency meaningful.
+   * A wallet's statement, newest first. Queried over `ledger_entries` rather
+   * than `transactions`, so a transfer reads as *sent* for one wallet and
+   * *received* for the other without being stored twice, and a
+   * cross-currency swap shows as two rows (debit + credit).
    */
   async listTransactions(
     walletId: string,
@@ -84,13 +80,9 @@ export class HistoryService {
   }
 
   /**
-   * A single transaction, visible to either party.
-   *
-   * Authorised against both sides rather than just the initiator, so a receiver
-   * can read a transfer that was sent to them. A caller who is party to neither
-   * gets FORBIDDEN_WALLET_ACCESS — distinct from NOT_FOUND on purpose, because
-   * the two are genuinely different situations and the ids are unguessable
-   * UUIDv7 anyway.
+   * A single transaction, visible to either party -- authorised against both
+   * sides, not just the initiator. A caller who is party to neither gets
+   * FORBIDDEN_WALLET_ACCESS, distinct from NOT_FOUND on purpose.
    */
   async getTransaction(walletId: string, transactionId: string): Promise<HistoryEntryResponse> {
     const transaction = await this.prisma.transaction.findUnique({
@@ -116,11 +108,8 @@ export class HistoryService {
 
   /**
    * The attempt log: every try, including the ones that moved no money.
-   *
-   * Separate from `/transactions` because the two carry different guarantees.
-   * `transactions` only ever holds committed money, which is what keeps the
-   * per-currency ledger sum provable; failures could not live there without
-   * breaking that, so they live here.
+   * Separate from `/transactions`, which only ever holds committed money --
+   * that's what keeps the per-currency ledger sum provable.
    */
   async listAttempts(walletId: string, query: AttemptHistoryQuery): Promise<Page<AttemptResponse>> {
     const limit = query.limit ?? 20;

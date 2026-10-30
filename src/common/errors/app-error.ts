@@ -3,17 +3,11 @@ import { HttpStatus } from '@nestjs/common';
 import { ErrorCode, type ErrorCodeValue } from './error-code';
 
 /**
- * The one error type the domain throws.
- *
- * Carrying both the stable `code` and the HTTP status on the error keeps the
- * mapping in one place instead of scattering `throw new BadRequestException(...)`
- * across services, and lets the exception filter stay dumb.
- *
- * `retryable` drives idempotency behaviour, which is the subtle part. A
- * deterministic failure (insufficient funds) will fail identically on retry, so
- * its key is consumed and the stored error is replayed. A transient failure (the
- * FX provider timed out) might succeed on retry, so its key is released. Getting
- * this backwards either poisons an operation forever or lets a retry double-spend.
+ * The one error type the domain throws. Carries both the stable `code` and
+ * the HTTP status, so the mapping lives in one place rather than scattered
+ * `throw new BadRequestException(...)` calls. `retryable` drives idempotency
+ * behaviour: a deterministic failure consumes its key and replays; a
+ * transient one releases it so a retry can succeed.
  */
 export class AppError extends Error {
   readonly code: ErrorCodeValue;

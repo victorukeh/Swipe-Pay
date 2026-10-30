@@ -296,21 +296,11 @@ export class OperationsService {
   }
 
   /**
-   * The legs of a movement that may or may not cross currencies.
-   *
-   * Same currency: two legs, payer to payee, and the currency nets to zero
-   * directly.
-   *
-   * Different currencies: four legs, because a debit in cNGN and a credit in
-   * USDx cannot net to zero against each other. SYSTEM_FX takes the counter-leg
-   * on each side, so both currencies balance independently:
-   *
-   *   cNGN:  payer -1000      SYSTEM_FX +1000      = 0
-   *   USDx:  SYSTEM_FX -0.62  payee     +0.62      = 0
-   *
-   * The conversion was floored, so SYSTEM_FX keeps slightly more source value
-   * than it paid out in destination value. That difference is the rounding dust,
-   * and it sits on an auditable balance rather than disappearing.
+   * The legs of a movement that may or may not cross currencies. Same
+   * currency: two legs, payer to payee. Different currencies: four legs,
+   * since a debit in one currency can't net against a credit in another --
+   * SYSTEM_FX takes the counter-leg on each side, and keeps the floored
+   * rounding dust as an auditable balance.
    */
   private static conversionLegs(params: {
     fxWalletId: string;
