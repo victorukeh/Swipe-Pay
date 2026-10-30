@@ -61,18 +61,3 @@ export class WalletResponse {
   })
   ratesSource!: string;
 }
-
-export class CreateWalletResponse extends WalletResponse {
-  @ApiProperty({
-    description:
-      'Token pair for the new wallet, so creation and first use are a single round trip. ' +
-      '`walletId` here is what another wallet needs as `toWalletId` to send you money.',
-  })
-  tokens!: {
-    walletId: string;
-    accessToken: string;
-    refreshToken: string;
-    expiresIn: number;
-    tokenType: string;
-  };
-}

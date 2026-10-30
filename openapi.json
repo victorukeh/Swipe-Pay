@@ -1,6 +1,77 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/v1/auth/register": {
+      "post": {
+        "description": "Identified by an email address or a mobile number -- exactly one is required, and neither may already belong to another wallet. The wallet holds a balance in every supported currency. Returns the wallet only, not a token pair: log in separately at POST /auth/tokens with the same contact and password to start an authenticated session.",
+        "operationId": "register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWalletDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/WalletResponse"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "WALLET_CONTACT_TAKEN -- that email or phone already has a wallet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "$ref": "#/components/schemas/ErrorPayload"
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Register a wallet",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/v1/auth/tokens": {
       "post": {
         "description": "Identify the wallet by the email or phone it was created with. A failed login does not reveal whether the contact exists, so this endpoint cannot be used to enumerate wallets.",
@@ -183,6 +254,51 @@
         ]
       }
     },
+    "/v1/wallets": {
+      "get": {
+        "description": "Resolved from the access token: there is no wallet id in the path, so no caller can read another wallet. An admin view of every wallet would live at GET /wallets/all.",
+        "operationId": "list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "requestData": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WalletResponse"
+                          }
+                        }
+                      },
+                      "required": [
+                        "requestData"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's wallets",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
     "/v1/rates": {
       "get": {
         "description": "Returns every ordered pair, the time the rates were last refreshed, and which tier of the provider chain served them. `degraded: true` means the live provider was unavailable and a cached, stale or static rate was used instead.",
@@ -281,120 +397,6 @@
         "summary": "Supported stablecoins, their fiat pegs and their precision",
         "tags": [
           "rates"
-        ]
-      }
-    },
-    "/v1/wallets": {
-      "post": {
-        "description": "Identified by an email address or a mobile number -- exactly one is required, and neither may already belong to another wallet. The wallet holds a balance in every supported currency. Returns a token pair, so creating and first using a wallet is one round trip.",
-        "operationId": "create",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateWalletDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "requestData": {
-                          "$ref": "#/components/schemas/CreateWalletResponse"
-                        }
-                      },
-                      "required": [
-                        "requestData"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "WALLET_CONTACT_TAKEN -- that email or phone already has a wallet.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "requestData": {
-                          "$ref": "#/components/schemas/ErrorPayload"
-                        }
-                      },
-                      "required": [
-                        "requestData"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "summary": "Create a wallet",
-        "tags": [
-          "wallets"
-        ]
-      },
-      "get": {
-        "description": "Resolved from the access token: there is no wallet id in the path, so no caller can read another wallet. An admin view of every wallet would live at GET /wallets/all.",
-        "operationId": "list",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "requestData": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/WalletResponse"
-                          }
-                        }
-                      },
-                      "required": [
-                        "requestData"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The caller's wallets",
-        "tags": [
-          "wallets"
         ]
       }
     },
@@ -1160,14 +1162,14 @@
   },
   "info": {
     "title": "Operation Borderless",
-    "description": "A cross-border stablecoin payment sandbox: multi-currency wallets, simulated deposits,\ncross-currency swaps, wallet-to-wallet transfers and transaction history.\n\n### Every response has the same shape\nSuccess or failure, the body is always these four keys:\n\n```json\n{\n  \"requestSuccessful\": true,\n  \"requestCode\": 200,\n  \"requestMessage\": \"Wallets retrieved\",\n  \"requestData\": {}\n}\n```\n\nCheck `requestSuccessful` first. `requestCode` repeats the HTTP status so the body is\nself-describing, and `requestData` holds the payload — or `null` when there is nothing\nto return. One shape means one unwrapping path in your client.\n\n### Money is never a JSON number\nEvery amount crosses this boundary as a **decimal string**. `JSON.parse('{\"amount\":0.1}')`\nalready holds an IEEE-754 double before any server code runs, so a number here would be\ncorrupted in transit. Internally amounts are integer counts of a currency’s minor units.\n\n### Precision is per currency\nAn amount with more decimal places than its currency admits is **rejected, not rounded**.\n`cXAF` has 0 decimals — the Central African CFA franc has no subunit in circulation — so\n`\"100.50\"` is not a representable amount. `GET /currencies` publishes the precision of each.\n\n### Conversions floor\nA converted amount is floored to the destination currency’s precision, so the system can\nnever credit more value than it debited. A conversion that would round to zero is rejected.\n\n### Retries are safe\nThe three money-moving endpoints require an `Idempotency-Key`. Retrying with the same key\nreturns the original response rather than moving money twice; reusing a key with a\ndifferent body is rejected. Responses carry `Idempotency-Replayed`.\n\n### Errors\nFailures use the same envelope, with the specifics in `requestData`:\n\n```json\n{\n  \"requestSuccessful\": false,\n  \"requestCode\": 422,\n  \"requestMessage\": \"Insufficient funds\",\n  \"requestData\": {\n    \"errorCode\": \"INSUFFICIENT_FUNDS\",\n    \"details\": { \"currency\": \"USDx\", \"requested\": \"50.000000\", \"available\": \"10.000000\" },\n    \"requestId\": \"01a186de-eff5-7145-aec9-fef34adc48d9\",\n    \"retryable\": false\n  }\n}\n```\n\n**Branch on `requestData.errorCode`, not on the status alone** — several distinct\nconditions return 422. `retryable` says whether retrying the identical request could\nsucceed, and `requestId` is echoed as the `X-Request-Id` header so you can quote it.\n\n### Getting started\n1. `POST /v1/wallets` — creates a wallet and returns a token pair.\n2. Paste `requestData.tokens.accessToken` into **Authorize** above.\n3. `POST /v1/deposits`, then `/v1/swaps` or `/v1/transfers`.",
+    "description": "A cross-border stablecoin payment sandbox: multi-currency wallets, simulated deposits,\ncross-currency swaps, wallet-to-wallet transfers and transaction history.\n\n### Getting started\n1. `POST /v1/auth/register` — registers a wallet by email or phone + password.\n2. `POST /v1/auth/tokens` — log in with the same credentials for a token pair.\n3. Paste `requestData.accessToken` into **Authorize** above.\n4. `POST /v1/deposits`, then `/v1/swaps` or `/v1/transfers`.",
     "version": "1.0.0",
     "contact": {}
   },
   "tags": [
     {
       "name": "wallets",
-      "description": "Create a wallet; read balances and the USD total"
+      "description": "Read balances and the USD total"
     },
     {
       "name": "operations",
@@ -1183,7 +1185,7 @@
     },
     {
       "name": "auth",
-      "description": "Tokens as a resource: create, rotate, revoke"
+      "description": "Register, then tokens as a resource: create, rotate, revoke"
     },
     {
       "name": "health",
@@ -1202,7 +1204,7 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http",
-        "description": "The `accessToken` from POST /v1/wallets or POST /v1/auth/tokens."
+        "description": "The `accessToken` from POST /v1/auth/tokens."
       }
     },
     "schemas": {
@@ -1269,6 +1271,121 @@
           "details",
           "requestId",
           "retryable"
+        ]
+      },
+      "BalanceResponse": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "cNGN"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Balance as a decimal string at the currency precision. A string, not a number, because JSON numbers are IEEE-754 doubles and would corrupt the value before a client could read it.",
+            "example": "125000.00"
+          },
+          "usdEquivalent": {
+            "type": "string",
+            "description": "Equivalent in USDx at the current rate.",
+            "example": "84.521000"
+          }
+        },
+        "required": [
+          "currency",
+          "amount",
+          "usdEquivalent"
+        ]
+      },
+      "WalletResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
+          },
+          "email": {
+            "type": "object",
+            "example": "ada@example.com",
+            "nullable": true
+          },
+          "phone": {
+            "type": "object",
+            "example": "+2348012345678",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-10-29T08:09:00.000Z"
+          },
+          "balances": {
+            "description": "One entry per supported currency, including zero balances.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BalanceResponse"
+            }
+          },
+          "totalUsdEquivalent": {
+            "type": "string",
+            "description": "Total value of every balance, in USDx. Each leg is floored independently, so the total is never reported higher than its true value.",
+            "example": "84.521000"
+          },
+          "totalCurrency": {
+            "type": "string",
+            "description": "The currency the total is denominated in.",
+            "example": "USDx"
+          },
+          "ratesAsOf": {
+            "type": "string",
+            "description": "When the rates used for the USD conversions were last refreshed upstream.",
+            "example": "2026-10-29T08:00:00.000Z"
+          },
+          "ratesSource": {
+            "type": "string",
+            "description": "Which tier of the FX chain priced this response. Anything other than `live` means the live provider was unavailable and a cached, stale or static rate was used.",
+            "enum": [
+              "live",
+              "cached",
+              "stale",
+              "fallback",
+              "pegged"
+            ],
+            "example": "live"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "balances",
+          "totalUsdEquivalent",
+          "totalCurrency",
+          "ratesAsOf",
+          "ratesSource"
+        ]
+      },
+      "CreateWalletDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address. Either this or `phone` is required. Stored lower-cased.",
+            "example": "ada@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Mobile number in E.164 format. Either this or `email` is required.",
+            "example": "+2348012345678"
+          },
+          "password": {
+            "type": "string",
+            "description": "At least 12 characters. Hashed with scrypt; never stored or logged in clear.",
+            "example": "correct-horse-battery-staple",
+            "minLength": 12,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "password"
         ]
       },
       "TokenPairResponse": {
@@ -1438,192 +1555,6 @@
           "decimals",
           "minorUnit",
           "smallestAmount"
-        ]
-      },
-      "BalanceResponse": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "string",
-            "example": "cNGN"
-          },
-          "amount": {
-            "type": "string",
-            "description": "Balance as a decimal string at the currency precision. A string, not a number, because JSON numbers are IEEE-754 doubles and would corrupt the value before a client could read it.",
-            "example": "125000.00"
-          },
-          "usdEquivalent": {
-            "type": "string",
-            "description": "Equivalent in USDx at the current rate.",
-            "example": "84.521000"
-          }
-        },
-        "required": [
-          "currency",
-          "amount",
-          "usdEquivalent"
-        ]
-      },
-      "CreateWalletResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
-          },
-          "email": {
-            "type": "object",
-            "example": "ada@example.com",
-            "nullable": true
-          },
-          "phone": {
-            "type": "object",
-            "example": "+2348012345678",
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string",
-            "example": "2026-10-29T08:09:00.000Z"
-          },
-          "balances": {
-            "description": "One entry per supported currency, including zero balances.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BalanceResponse"
-            }
-          },
-          "totalUsdEquivalent": {
-            "type": "string",
-            "description": "Total value of every balance, in USDx. Each leg is floored independently, so the total is never reported higher than its true value.",
-            "example": "84.521000"
-          },
-          "totalCurrency": {
-            "type": "string",
-            "description": "The currency the total is denominated in.",
-            "example": "USDx"
-          },
-          "ratesAsOf": {
-            "type": "string",
-            "description": "When the rates used for the USD conversions were last refreshed upstream.",
-            "example": "2026-10-29T08:00:00.000Z"
-          },
-          "ratesSource": {
-            "type": "string",
-            "description": "Which tier of the FX chain priced this response. Anything other than `live` means the live provider was unavailable and a cached, stale or static rate was used.",
-            "enum": [
-              "live",
-              "cached",
-              "stale",
-              "fallback",
-              "pegged"
-            ],
-            "example": "live"
-          },
-          "tokens": {
-            "type": "object",
-            "description": "Token pair for the new wallet, so creation and first use are a single round trip. `walletId` here is what another wallet needs as `toWalletId` to send you money."
-          }
-        },
-        "required": [
-          "id",
-          "createdAt",
-          "balances",
-          "totalUsdEquivalent",
-          "totalCurrency",
-          "ratesAsOf",
-          "ratesSource",
-          "tokens"
-        ]
-      },
-      "CreateWalletDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "Email address. Either this or `phone` is required. Stored lower-cased.",
-            "example": "ada@example.com"
-          },
-          "phone": {
-            "type": "string",
-            "description": "Mobile number in E.164 format. Either this or `email` is required.",
-            "example": "+2348012345678"
-          },
-          "password": {
-            "type": "string",
-            "description": "At least 12 characters. Hashed with scrypt; never stored or logged in clear.",
-            "example": "correct-horse-battery-staple",
-            "minLength": 12,
-            "maxLength": 256
-          }
-        },
-        "required": [
-          "password"
-        ]
-      },
-      "WalletResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "01a186d3-8580-75db-876b-edb94feb8e0c"
-          },
-          "email": {
-            "type": "object",
-            "example": "ada@example.com",
-            "nullable": true
-          },
-          "phone": {
-            "type": "object",
-            "example": "+2348012345678",
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string",
-            "example": "2026-10-29T08:09:00.000Z"
-          },
-          "balances": {
-            "description": "One entry per supported currency, including zero balances.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BalanceResponse"
-            }
-          },
-          "totalUsdEquivalent": {
-            "type": "string",
-            "description": "Total value of every balance, in USDx. Each leg is floored independently, so the total is never reported higher than its true value.",
-            "example": "84.521000"
-          },
-          "totalCurrency": {
-            "type": "string",
-            "description": "The currency the total is denominated in.",
-            "example": "USDx"
-          },
-          "ratesAsOf": {
-            "type": "string",
-            "description": "When the rates used for the USD conversions were last refreshed upstream.",
-            "example": "2026-10-29T08:00:00.000Z"
-          },
-          "ratesSource": {
-            "type": "string",
-            "description": "Which tier of the FX chain priced this response. Anything other than `live` means the live provider was unavailable and a cached, stale or static rate was used.",
-            "enum": [
-              "live",
-              "cached",
-              "stale",
-              "fallback",
-              "pegged"
-            ],
-            "example": "live"
-          }
-        },
-        "required": [
-          "id",
-          "createdAt",
-          "balances",
-          "totalUsdEquivalent",
-          "totalCurrency",
-          "ratesAsOf",
-          "ratesSource"
         ]
       },
       "TransactionResponse": {

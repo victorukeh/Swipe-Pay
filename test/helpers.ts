@@ -35,20 +35,27 @@ export interface Wallet {
   email: string;
 }
 
-/** Creates a wallet and returns it with its tokens. */
+/**
+ * Registers a wallet, then logs in to get its tokens.
+ *
+ * Two round trips, deliberately: registration (`POST /auth/register`) no
+ * longer returns a token pair, so this helper does what any real client must
+ * do -- register, then authenticate separately at `POST /auth/tokens`.
+ */
 export async function createWallet(h: Harness, prefix = 'w'): Promise<Wallet> {
   const email = uniqueEmail(prefix);
-  const res = await h
-    .http()
-    .post('/v1/wallets')
-    .send({ email, password: 'correct-horse-battery-staple' })
-    .expect(201);
+  const password = 'correct-horse-battery-staple';
 
-  const body = data<{ id: string; tokens: { accessToken: string; refreshToken: string } }>(res);
+  const registerRes = await h.http().post('/v1/auth/register').send({ email, password }).expect(201);
+  const wallet = data<{ id: string }>(registerRes);
+
+  const loginRes = await h.http().post('/v1/auth/tokens').send({ email, password }).expect(201);
+  const tokens = data<{ accessToken: string; refreshToken: string }>(loginRes);
+
   return {
-    id: body.id,
-    accessToken: body.tokens.accessToken,
-    refreshToken: body.tokens.refreshToken,
+    id: wallet.id,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
     email,
   };
 }

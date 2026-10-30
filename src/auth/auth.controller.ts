@@ -5,18 +5,41 @@ import { ApiEnvelope, ApiEnvelopeError } from '../common/http/response-envelope'
 import { ResponseMessage } from '../common/interceptors/response-envelope.interceptor';
 
 import type { AuthenticatedWallet } from '../common/request-context';
+import { WalletResponse } from '../wallets/dto/wallet.response';
+import { WalletsService } from '../wallets/wallets.service';
 import { AuthService } from './auth.service';
 import { CurrentWallet } from './current-wallet.decorator';
-import { LoginDto, RefreshDto, TokenPairResponse } from './dto/auth.dto';
+import { CreateWalletDto, LoginDto, RefreshDto, TokenPairResponse } from './dto/auth.dto';
 import { Public } from './public.decorator';
 
 @ApiTags('auth')
-@Controller('auth/tokens')
+@Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly wallets: WalletsService,
+  ) {}
 
   @Public()
-  @Post()
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Register a wallet',
+    description:
+      'Identified by an email address or a mobile number -- exactly one is required, and neither ' +
+      'may already belong to another wallet. The wallet holds a balance in every supported ' +
+      'currency. Returns the wallet only, not a token pair: log in separately at ' +
+      'POST /auth/tokens with the same contact and password to start an authenticated session.',
+  })
+  @ApiEnvelope(WalletResponse, { status: 201 })
+  @ApiEnvelopeError(409, 'WALLET_CONTACT_TAKEN -- that email or phone already has a wallet.')
+  @ResponseMessage('Wallet registered')
+  async register(@Body() dto: CreateWalletDto): Promise<WalletResponse> {
+    return this.wallets.create(dto);
+  }
+
+  @Public()
+  @Post('tokens')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Log in: exchange credentials for a token pair',
@@ -32,7 +55,7 @@ export class AuthController {
   }
 
   @Public()
-  @Post('refresh')
+  @Post('tokens/refresh')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Rotate a refresh token for a new pair',
@@ -47,7 +70,7 @@ export class AuthController {
     return this.auth.refresh(dto.refreshToken);
   }
 
-  @Delete()
+  @Delete('tokens')
   // 200 rather than 204: every response carries the envelope, and a 204 has no
   // body to put it in.
   @HttpCode(HttpStatus.OK)

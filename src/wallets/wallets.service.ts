@@ -9,7 +9,7 @@ import { MoneyService } from '../money/money.service';
 import { MoneyUtil } from '../money/money.util';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PrismaTx } from '../prisma/prisma.service';
-import type { CreateWalletResponse, WalletResponse } from './dto/wallet.response';
+import type { WalletResponse } from './dto/wallet.response';
 
 @Injectable()
 export class WalletsService {
@@ -22,19 +22,16 @@ export class WalletsService {
   ) {}
 
   /**
-   * Creates a wallet and returns it with a token pair, so creating and first
-   * using a wallet is one round trip.
-   *
-   * Uniqueness of the email or phone is enforced by unique indexes in the
-   * database, not by a read-then-write here: two simultaneous registrations with
-   * the same address would both pass a pre-check and both insert. The unique
-   * violation is mapped to WALLET_CONTACT_TAKEN by the error mapper.
+   * Registers a wallet, called from `POST /auth/register`. Returns the
+   * wallet alone. A caller logs in afterwards at `POST /auth/tokens`.
+   * Contact uniqueness is a database unique index, not a read-then-write
+   * here, so two simultaneous registrations can't both pass a pre-check.
    */
   async create(input: {
     email?: string | undefined;
     phone?: string | undefined;
     password: string;
-  }): Promise<CreateWalletResponse> {
+  }): Promise<WalletResponse> {
     const contact = AuthService.requireOneContact(input);
     const { hash, salt } = await this.auth.hashPassword(input.password);
     const walletId = uuidv7();
@@ -51,18 +48,13 @@ export class WalletsService {
       await WalletsService.ensureBalanceRows(tx, walletId, this.currencies.codes());
     });
 
-    const wallet = await this.get(walletId);
-    const tokens = await this.auth.issuePair(walletId);
-    return { ...wallet, tokens };
+    return this.get(walletId);
   }
 
   /**
-   * Creates the missing balance rows for a wallet.
-   *
-   * Done up front rather than lazily during a movement, because inserting a row
-   * while other balance rows are already locked `FOR UPDATE` is how lock-order
-   * deadlocks appear. `skipDuplicates` makes it safe to call repeatedly, which
-   * matters after a currency is added to the table.
+   * Creates the missing balance rows for a wallet, up front rather than
+   * lazily during a movement -- inserting a row while others are already
+   * locked `FOR UPDATE` is how lock-order deadlocks appear.
    */
   static async ensureBalanceRows(
     tx: PrismaTx,
@@ -133,13 +125,7 @@ export class WalletsService {
     };
   }
 
-  /**
-   * The caller's wallets as a collection.
-   *
-   * One today. It is a list rather than a bare object because the URI names a
-   * collection, and because a wallet-per-purpose model is a plausible extension
-   * that would not then need a breaking change.
-   */
+  /** The caller's wallets as a collection -- one today, but a list keeps a future wallet-per-purpose model non-breaking. */
   async list(walletId: string): Promise<WalletResponse[]> {
     return [await this.get(walletId)];
   }

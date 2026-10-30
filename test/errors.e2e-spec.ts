@@ -164,7 +164,7 @@ describe('error contract', () => {
     it('WALLET_CONTACT_TAKEN', async () => {
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ email: wallet.email, password: 'correct-horse-battery-staple' })
         .expect(409);
       expect(errorCode(res.body)).toBe('WALLET_CONTACT_TAKEN');
@@ -367,22 +367,21 @@ describe('error contract', () => {
       // The registry caches at boot, so a fresh app is needed to see it.
       const fresh = await createHarness();
       try {
-        const freshWallet = await (async () => {
-          const res = await fresh
-            .http()
-            .post('/v1/wallets')
-            .send({
-              email: `zzz-${Date.now()}@example.test`,
-              password: 'correct-horse-battery-staple',
-            })
-            .expect(201);
-          return data<{ id: string; tokens: { accessToken: string } }>(res);
-        })();
+        const email = `zzz-${Date.now()}@example.test`;
+        const password = 'correct-horse-battery-staple';
+
+        await fresh.http().post('/v1/auth/register').send({ email, password }).expect(201);
+        const loginRes = await fresh
+          .http()
+          .post('/v1/auth/tokens')
+          .send({ email, password })
+          .expect(201);
+        const { accessToken } = data<{ accessToken: string }>(loginRes);
 
         await fresh
           .http()
           .post('/v1/deposits')
-          .set('authorization', `Bearer ${freshWallet.tokens.accessToken}`)
+          .set('authorization', `Bearer ${accessToken}`)
           .set('idempotency-key', uniqueKey('zzz-dep'))
           .send({ currency: 'cZZZ', amount: '100.00' })
           .expect(201);
@@ -390,7 +389,7 @@ describe('error contract', () => {
         const res = await fresh
           .http()
           .post('/v1/swaps')
-          .set('authorization', `Bearer ${freshWallet.tokens.accessToken}`)
+          .set('authorization', `Bearer ${accessToken}`)
           .set('idempotency-key', uniqueKey('zzz-swap'))
           .send({ fromCurrency: 'cZZZ', toCurrency: 'USDx', amount: '10.00' })
           .expect(503);

@@ -20,41 +20,36 @@ describe('wallets', () => {
   });
 
   describe('creation', () => {
-    it('creates a wallet from an email and returns a usable token pair', async () => {
+    it('registers a wallet from an email, with no token pair, then logs in', async () => {
       const email = uniqueEmail('create');
-      const res = await h
-        .http()
-        .post('/v1/wallets')
-        .send({ email, password: 'correct-horse-battery-staple' })
-        .expect(201);
+      const password = 'correct-horse-battery-staple';
+      const res = await h.http().post('/v1/auth/register').send({ email, password }).expect(201);
 
       const body = data<{
         id: string;
         email: string;
         phone: string | null;
         balances: Array<{ currency: string; amount: string }>;
-        tokens: { accessToken: string; walletId: string };
       }>(res);
 
       expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
       expect(body.email).toBe(email);
       expect(body.phone).toBeNull();
-      expect(body.tokens.walletId).toBe(body.id);
+      // Registration no longer hands out a session -- the client logs in
+      // separately, exactly as it would on any later visit.
+      expect(JSON.stringify(body)).not.toContain('token');
 
-      // The returned token must work immediately: creation and first use are
-      // meant to be one round trip.
-      await h
-        .http()
-        .get('/v1/wallets')
-        .set('authorization', `Bearer ${body.tokens.accessToken}`)
-        .expect(200);
+      const loginRes = await h.http().post('/v1/auth/tokens').send({ email, password }).expect(201);
+      const { accessToken } = data<{ accessToken: string }>(loginRes);
+
+      await h.http().get('/v1/wallets').set('authorization', `Bearer ${accessToken}`).expect(200);
     });
 
-    it('creates a wallet from a mobile number', async () => {
+    it('registers a wallet from a mobile number', async () => {
       const phone = uniquePhone();
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ phone, password: 'correct-horse-battery-staple' })
         .expect(201);
 
@@ -81,13 +76,13 @@ describe('wallets', () => {
       const email = uniqueEmail('dup');
       await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ email, password: 'correct-horse-battery-staple' })
         .expect(201);
 
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ email: email.toUpperCase(), password: 'another-password-here' })
         .expect(409);
 
@@ -99,13 +94,13 @@ describe('wallets', () => {
       const phone = uniquePhone();
       await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ phone, password: 'correct-horse-battery-staple' })
         .expect(201);
 
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ phone, password: 'another-password-here' })
         .expect(409);
       expect(errorCode(res.body)).toBe('WALLET_CONTACT_TAKEN');
@@ -114,7 +109,7 @@ describe('wallets', () => {
     it('requires at least one contact', async () => {
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ password: 'correct-horse-battery-staple' })
         .expect(400);
       expect(errorCode(res.body)).toBe('VALIDATION_FAILED');
@@ -127,7 +122,7 @@ describe('wallets', () => {
     ])('rejects %s', async (_label, payload) => {
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ password: 'correct-horse-battery-staple', ...payload })
         .expect(400);
       expect(errorCode(res.body)).toBe('VALIDATION_FAILED');
@@ -138,7 +133,7 @@ describe('wallets', () => {
       // no-op on a money API.
       await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({
           email: uniqueEmail('extra'),
           password: 'correct-horse-battery-staple',
@@ -150,7 +145,7 @@ describe('wallets', () => {
     it('never returns the password or its hash', async () => {
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ email: uniqueEmail('secret'), password: 'correct-horse-battery-staple' })
         .expect(201);
 
@@ -276,14 +271,14 @@ describe('wallets', () => {
     it('reports 201 in the body for a created resource', async () => {
       const res = await h
         .http()
-        .post('/v1/wallets')
+        .post('/v1/auth/register')
         .send({ email: uniqueEmail('env201'), password: 'correct-horse-battery-staple' })
         .expect(201);
 
       const body = wrapper(res);
       expect(body.requestSuccessful).toBe(true);
       expect(body.requestCode).toBe(201);
-      expect(body.requestMessage).toBe('Wallet created');
+      expect(body.requestMessage).toBe('Wallet registered');
     });
 
     it('wraps public endpoints too', async () => {
