@@ -1,5 +1,14 @@
 import { createHarness, seedTestRates, uniqueKey, type Harness } from './app-harness';
-import { balances, createWallet, deposit, errorCode, swap, transfer, type Wallet } from './helpers';
+import {
+  balances,
+  createWallet,
+  deposit,
+  errorCode,
+  swap,
+  transfer,
+  wrapper,
+  type Wallet,
+} from './helpers';
 
 describe('money operations', () => {
   let h: Harness;
@@ -60,6 +69,38 @@ describe('money operations', () => {
         0n,
       );
       expect(net).toBe(0n);
+    });
+
+    it('replays the original response instead of crediting twice', async () => {
+      const wallet = await createWallet(h, 'replay');
+      const key = uniqueKey('replay');
+      const payload = { currency: 'cNGN', amount: '250.00' };
+
+      const first = await h
+        .http()
+        .post('/v1/deposits')
+        .set('authorization', `Bearer ${wallet.accessToken}`)
+        .set('idempotency-key', key)
+        .send(payload)
+        .expect(201);
+      expect(first.headers['idempotency-replayed']).toBe('false');
+
+      const second = await h
+        .http()
+        .post('/v1/deposits')
+        .set('authorization', `Bearer ${wallet.accessToken}`)
+        .set('idempotency-key', key)
+        .send(payload)
+        .expect(201);
+      expect(second.headers['idempotency-replayed']).toBe('true');
+
+      // The second response is byte-identical to the first, not merely
+      // equivalent -- same transaction id, same timestamp, nothing recomputed.
+      expect(wrapper(second)).toEqual(wrapper(first));
+
+      // The decisive assertion: credited once, whatever the client does.
+      expect((await balances(h, wallet))['cNGN']).toBe('250.00');
+      expect(await h.prisma.transaction.count({ where: { sourceWalletId: wallet.id } })).toBe(1);
     });
   });
 
