@@ -4902,6 +4902,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"helmet@npm:^8.3.0":
+  version: 8.3.0
+  resolution: "helmet@npm:8.3.0"
+  checksum: 10c0/69f33ca716ed3ce34f1f2f48ce8618846dfa9c89e3a15d6bccefc882541e8b028517448c6b0e7450792fd23e5580bfe6d410d4f22bedc2a94f6b1188817a059a
+  languageName: node
+  linkType: hard
+
 "html-escaper@npm:^2.0.0":
   version: 2.0.2
   resolution: "html-escaper@npm:2.0.2"
@@ -6414,6 +6421,7 @@ __metadata:
     class-validator: "npm:^0.14.2"
     eslint: "npm:^9.39.0"
     eslint-config-prettier: "npm:^10.1.8"
+    helmet: "npm:^8.3.0"
     ioredis: "npm:^5.6.1"
     jest: "npm:^30.5.2"
     nock: "npm:^14.0.5"

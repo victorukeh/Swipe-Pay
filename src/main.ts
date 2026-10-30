@@ -4,6 +4,7 @@ import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import helmet from 'helmet';
 import { SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
@@ -13,6 +14,11 @@ import { buildOpenApiDocument } from './openapi';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService<EnvSchema, true>);
+
+  // Baseline security headers (HSTS, no-sniff, frame denial, ...) on every
+  // response. A JSON API has little use for a CSP of its own, so the default
+  // policy set is left as-is rather than tuned.
+  app.use(helmet());
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(
